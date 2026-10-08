@@ -14,6 +14,7 @@ from agentlab.llm.fake import FixtureAuthorLLM, OfflineLLM
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from agentlab.evals.models import EvalCase
     from agentlab.skills.catalog import SkillCatalog
 
 
@@ -39,11 +40,11 @@ def test_flight_request_reports_missing_web_capability(catalog: SkillCatalog) ->
 def test_offline_suite_passes(catalog: SkillCatalog, cases_dir: Path, tmp_path: Path) -> None:
     stores = iter(range(1000))
 
-    def agent_for() -> Agent:
+    def agent_for(case: EvalCase) -> Agent:
         store = tmp_path / str(next(stores))
         learner = SkillLearner(SkillAuthor(FixtureAuthorLLM()), store)
         return Agent(OfflineLLM(), catalog, learner=learner)
 
-    summary = run_suite(load_cases(cases_dir), agent_for, catalog)
-    failures = {r.case_id: r.failed_checks for r in summary.results if not r.passed}
+    summary = run_suite(load_cases(cases_dir), agent_for, catalog, offline=True)
+    failures = {r.case_id: r.failed_checks for r in summary.scored if not r.passed}
     assert failures == {}

@@ -50,6 +50,10 @@ class EvalCase:
     skill: str | None = None
     arguments: JSONObject = field(default_factory=dict[str, object])
     approval: Approval = "deny_plan"
+    # Turns sent first, in the same conversation, so the task can refer back to them.
+    earlier_turns: tuple[str, ...] = ()
+    # Needs a real model's judgment: skipped (never passed) by offline runs.
+    model_only: bool = False
     path: Path | None = None
 
 
@@ -67,10 +71,13 @@ class EvalResult:
     tags: tuple[str, ...]
     checks: tuple[CheckResult, ...]
     error: str | None = None
+    skipped: str | None = None
 
     @property
     def passed(self) -> bool:
-        return self.error is None and bool(self.checks) and all(c.passed for c in self.checks)
+        if self.skipped is not None or self.error is not None:
+            return False
+        return bool(self.checks) and all(c.passed for c in self.checks)
 
     @property
     def score(self) -> float:
@@ -90,6 +97,7 @@ class EvalResult:
             "passed": self.passed,
             "score": self.score,
             "error": self.error,
+            "skipped": self.skipped,
             "checks": [
                 {"name": c.name, "passed": c.passed, "detail": c.detail} for c in self.checks
             ],
@@ -101,20 +109,29 @@ class EvalSummary:
     results: tuple[EvalResult, ...]
 
     @property
+    def scored(self) -> tuple[EvalResult, ...]:
+        """Results that count: everything except skipped cases."""
+        return tuple(r for r in self.results if r.skipped is None)
+
+    @property
+    def skipped_count(self) -> int:
+        return len(self.results) - len(self.scored)
+
+    @property
     def passed_count(self) -> int:
-        return sum(r.passed for r in self.results)
+        return sum(r.passed for r in self.scored)
 
     @property
     def pass_rate(self) -> float:
-        return self.passed_count / len(self.results) if self.results else 0.0
+        return self.passed_count / len(self.scored) if self.scored else 0.0
 
     @property
     def mean_score(self) -> float:
-        return sum(r.score for r in self.results) / len(self.results) if self.results else 0.0
+        return sum(r.score for r in self.scored) / len(self.scored) if self.scored else 0.0
 
     @property
     def all_passed(self) -> bool:
-        return self.passed_count == len(self.results)
+        return self.passed_count == len(self.scored)
 
     def failures_by_mode(self) -> dict[str, list[tuple[str, str]]]:
         """Group failures by check name (the failure mode) -> [(case_id, detail)]."""
@@ -128,7 +145,8 @@ class EvalSummary:
 
     def to_json(self) -> JSONObject:
         return {
-            "total": len(self.results),
+            "total": len(self.scored),
+            "skipped": self.skipped_count,
             "passed": self.passed_count,
             "pass_rate": self.pass_rate,
             "mean_score": self.mean_score,

@@ -10,10 +10,12 @@ from agentlab.cli import EXIT_ERROR, EXIT_OK, main
 from agentlab.llm.client import LLMError
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from agentlab.agent.loop import AgentRun
     from agentlab.learning.approval import Approver
+    from agentlab.models import Message
 
 
 @pytest.fixture(autouse=True)
@@ -91,7 +93,13 @@ def test_chat_keeps_going_after_an_llm_error(
 ) -> None:
     calls: list[str] = []
 
-    def flaky_run(_self: Agent, task: str, *, approver: Approver | None = None) -> AgentRun:
+    def flaky_run(
+        _self: Agent,
+        task: str,
+        *,
+        approver: Approver | None = None,
+        history: Sequence[Message] = (),
+    ) -> AgentRun:
         calls.append(task)
         raise LLMError("service unavailable")
 
@@ -118,3 +126,26 @@ def test_malformed_dotenv_is_reported(capsys: pytest.CaptureFixture[str], tmp_pa
     (tmp_path / ".env").write_text("this is not a setting\n")
     assert main(["skills"]) == EXIT_ERROR
     assert ".env:1: expected KEY=VALUE" in capsys.readouterr().err
+
+
+def test_chat_carries_the_conversation_until_reset(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[int] = []
+    real_run = Agent.run
+
+    def recording_run(
+        self: Agent,
+        task: str,
+        *,
+        approver: Approver | None = None,
+        history: Sequence[Message] = (),
+    ) -> AgentRun:
+        seen.append(len(history))
+        return real_run(self, task, approver=approver, history=history)
+
+    monkeypatch.setattr(Agent, "run", recording_run)
+    monkeypatch.setattr("sys.stdin", io.StringIO("What is 2 + 3?\nWhat is 6 * 7?\nreset\nhi\n"))
+    assert main(["chat", "--offline"]) == EXIT_OK
+    first, second, after_reset = seen
+    assert first == 0
+    assert second > 0, "the second question sees the first exchange"
+    assert after_reset == 0

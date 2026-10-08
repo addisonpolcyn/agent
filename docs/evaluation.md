@@ -36,6 +36,8 @@ stop_reason = "answered"
 
 Unknown checks, or checks used with the wrong kind, are rejected when the case loads. A case must declare at least one check.
 
+Agent cases may set `earlier_turns = ["...", ...]`. These are sent first in the same conversation, so the task can refer back to them; only the final task's run is checked. Cases that need a real model's judgment (such as following a reference to an earlier turn) set `model_only = true`. Offline runs report them as `SKIP`, never as passed, and leave them out of the pass rate. The live job runs them.
+
 Agent cases may set `approval = "approve" | "deny_plan" | "deny_skill"` (default `deny_plan`). It is the scripted human at the two learning gates; evals never prompt anyone. Every agent case runs on a fresh agent with its own empty learned-skills directory, so nothing learned in one case leaks into another or into `.agentlab/`.
 
 ## Runtime evaluation of learned skills

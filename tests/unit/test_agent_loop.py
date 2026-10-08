@@ -211,3 +211,27 @@ def test_propose_skill_plan_is_reserved(catalog: SkillCatalog) -> None:
 
     with pytest.raises(ValueError, match="reserved"):
         Agent(ScriptedLLM([]), Reserved({}))
+
+
+def test_history_is_sent_before_the_new_task(catalog: SkillCatalog) -> None:
+    llm = ScriptedLLM(
+        [call("calculator", {"expression": "1234 * 5"}), answer("6170"), answer("7170")]
+    )
+    agent = Agent(llm, catalog)
+    first = agent.run("What is 1234 * 5?")
+    agent.run("Now add 1000 to that result.", history=first.messages)
+
+    sent = llm.calls[2].messages
+    assert sent[: len(first.messages)] == first.messages, "history is resent, never rewritten"
+    assert sent[-1] == UserMessage("Now add 1000 to that result.")
+
+
+def test_history_drops_provider_state(catalog: SkillCatalog) -> None:
+    earlier = (UserMessage("hi"), AssistantMessage("hello", (), provider_state=object()))
+    llm = ScriptedLLM([answer("ok")])
+    Agent(llm, catalog).run("again", history=earlier)
+
+    replayed = llm.calls[0].messages[1]
+    assert isinstance(replayed, AssistantMessage)
+    assert replayed.text == "hello"
+    assert replayed.provider_state is None

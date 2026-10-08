@@ -60,6 +60,8 @@ Evaluation  (src/agentlab/evals/) ──► Flywheel  (src/agentlab/flywheel/) �
 
 **Learning (`propose_skill_plan`).** With a `SkillLearner`, the loop offers a second built-in tool through which the model can propose building generic skills. The model proposes; deterministic rules, the user (twice) and the runtime harness decide. A learned skill enters the catalog as an ordinary skill whose function runs generated code in the sandbox, so the catalog boundary (`execute(name, args) -> SkillResult`) is unchanged. See [skills.md § Learned skills](skills.md#learned-skills).
 
+**Conversation history.** `Agent.run(task, history=...)` resends earlier turns before the new task (`AgentRun.messages` is the history for the next turn), because the model API is stateless. History is append-only. Provider-private state from earlier turns, such as Claude's thinking blocks, is not replayed: it is bound to the tool list, which changes when a skill is learned.
+
 **The trace is the evaluation surface (`AgentRun`).** Evals check *behavior*: which skills were used, which gaps were reported and how the run stopped. They don't just check the final string. That is what makes "did the agent recognize it needed fresh information?" testable.
 
 **Evaluation is part of the system, not an add-on.** Every behavior worth having gets an eval case. The flywheel turns eval runs into a failure summary that drives the next change. See [evaluation.md](evaluation.md).
@@ -89,4 +91,4 @@ Anthropic's browser-use guidance warns specifically that web pages can carry pro
 
 ## Deliberately absent
 
-These are absent on purpose: general planning (the only planning is the small, rule-checked skill plan), memory, recursion, and long-running autonomy; MCP; browser automation; databases and dashboards. **MCP** is a plausible future *transport* for skills: an MCP-backed skill would sit behind the same `SkillCatalog` boundary. It gets adopted once the skill boundary has proven stable, not before.
+These are absent on purpose: general planning (the only planning is the small, rule-checked skill plan), long-term memory (chat resends the current conversation and nothing persists between sessions), recursion, and long-running autonomy; MCP; browser automation; databases and dashboards. **MCP** is a plausible future *transport* for skills: an MCP-backed skill would sit behind the same `SkillCatalog` boundary. It gets adopted once the skill boundary has proven stable, not before.

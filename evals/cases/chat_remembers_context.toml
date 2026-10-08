@@ -1,0 +1,14 @@
+id = "chat_remembers_context"
+kind = "agent"
+description = """\
+Follow-ups refer back to the conversation. The earlier turn's result is only in the history, \
+so answering correctly shows the agent received and used it."""
+tags = ["agent", "memory"]
+earlier_turns = ["What is 1234 * 5?"]
+task = "Now add 1000 to that result."
+model_only = true
+
+[expect]
+skills_used = ["calculator"]
+answer_contains = ["7170"]
+stop_reason = "answered"

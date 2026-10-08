@@ -28,9 +28,10 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from agentlab.agent.loop import AgentRun
-    from agentlab.evals.models import EvalSummary
+    from agentlab.evals.models import EvalCase, EvalSummary
     from agentlab.learning.approval import Approver
     from agentlab.llm.client import LLMClient
+    from agentlab.models import Message
     from agentlab.skills.catalog import SkillCatalog
 
 EXIT_OK = 0
@@ -70,7 +71,7 @@ def _parser() -> argparse.ArgumentParser:
     ask = commands.add_parser("ask", help="run the agent on one task")
     ask.add_argument("task")
     chat = commands.add_parser(
-        "chat", help="ask questions interactively (each is answered independently)"
+        "chat", help="ask questions interactively (the conversation is remembered)"
     )
     for command in (ask, chat):
         command.add_argument("--offline", action="store_true", help=offline_help)
@@ -117,8 +118,11 @@ def _ask(agent: Agent, task: str, approver: Approver) -> int:
 
 
 def _chat(agent: Agent, approver: Approver) -> int:
-    """A REPL over ``Agent.run``. The agent has no memory yet, so turns don't see each other."""
-    print("agentlab chat. Each question is answered independently. 'exit' or Ctrl-D to quit.")
+    """A REPL over ``Agent.run`` that carries the conversation from one question to the next."""
+    print(
+        "agentlab chat. The conversation is remembered; 'reset' clears it, 'exit' or Ctrl-D quits."
+    )
+    history: tuple[Message, ...] = ()
     while True:
         try:
             task = input("\n> ").strip()
@@ -127,13 +131,20 @@ def _chat(agent: Agent, approver: Approver) -> int:
             return EXIT_OK
         if task in {"exit", "quit"}:
             return EXIT_OK
+        if task == "reset":
+            history = ()
+            print("(conversation cleared)")
+            continue
         if not task:
             continue
         try:
-            _print_run(agent.run(task, approver=approver))
+            run = agent.run(task, approver=approver, history=history)
         except LLMError as exc:
             # Report and keep the session alive; one failed call shouldn't end the chat.
             print(f"error: {exc}", file=sys.stderr)
+            continue
+        history = run.messages
+        _print_run(run)
 
 
 def _print_run(run: AgentRun) -> None:
@@ -160,10 +171,10 @@ def _run_suite(settings: Settings, catalog: SkillCatalog, offline: bool) -> Eval
     cases = load_cases(settings.cases_dir)
     with tempfile.TemporaryDirectory(prefix="agentlab-eval-") as root:
 
-        def agent_for() -> Agent:
+        def agent_for(case: EvalCase) -> Agent:
             return _agent(settings, catalog, offline, Path(tempfile.mkdtemp(dir=root)))
 
-        return run_suite(cases, agent_for, catalog)
+        return run_suite(cases, agent_for, catalog, offline=offline)
 
 
 def _format_trace(run: AgentRun) -> str:
