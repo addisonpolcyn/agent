@@ -1,0 +1,15 @@
+id = "learn_word_count"
+kind = "agent"
+description = """\
+On-demand learning, approved at both gates. No skill counts words, so the agent proposes a \
+generic skill, the harness builds and tests it in the sandbox, and the agent uses it to answer."""
+tags = ["agent", "learning"]
+task = """\
+I'll need word counts for a lot of documents, so build a reusable skill for it. Start with: \
+count the words in 'the quick brown fox jumps over the lazy dog'"""
+approval = "approve"
+
+[expect]
+learning_outcome = "ready"
+answer_contains = ["9"]
+stop_reason = "answered"

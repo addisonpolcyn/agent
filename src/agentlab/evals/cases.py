@@ -5,7 +5,7 @@ from __future__ import annotations
 import tomllib
 from typing import TYPE_CHECKING, Any, cast
 
-from agentlab.evals.models import EvalCase, Expectations
+from agentlab.evals.models import APPROVALS, EvalCase, Expectations
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -25,6 +25,8 @@ _AGENT_CHECKS = frozenset(
         "no_skills_used",
         "capability_gap",
         "stop_reason",
+        "skills_learned",
+        "learning_outcome",
     }
 )
 _SKILL_CHECKS = frozenset({"output_equals", "error_contains"})
@@ -50,6 +52,9 @@ def load_case(path: Path) -> EvalCase:
     kind = data.get("kind")
     if kind not in ("agent", "skill"):
         raise EvalCaseError(f"{path}: 'kind' must be 'agent' or 'skill'")
+    approval = data.get("approval", "deny_plan")
+    if approval not in APPROVALS:
+        raise EvalCaseError(f"{path}: 'approval' must be one of {', '.join(APPROVALS)}")
     expect = cast("dict[str, Any]", data.get("expect", {}))
     _check_expectation_keys(path, kind, expect)
 
@@ -61,6 +66,7 @@ def load_case(path: Path) -> EvalCase:
         task=data.get("task"),
         skill=data.get("skill"),
         arguments=cast("dict[str, Any]", data.get("arguments", {})),
+        approval=approval,
         expect=_expectations(expect),
         path=path,
     )
@@ -88,6 +94,8 @@ def _expectations(expect: dict[str, Any]) -> Expectations:
         no_skills_used=bool(expect.get("no_skills_used", False)),
         capability_gap=expect.get("capability_gap"),
         stop_reason=expect.get("stop_reason"),
+        skills_learned=tuple(expect.get("skills_learned", ())),
+        learning_outcome=expect.get("learning_outcome"),
         output_equals=expect.get("output_equals"),
         error_contains=expect.get("error_contains"),
     )

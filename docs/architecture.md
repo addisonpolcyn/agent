@@ -14,11 +14,12 @@ Agent loop  (src/agentlab/agent/loop.py)
 LLM  (LLMClient protocol: ClaudeClient | OfflineLLM | ScriptedLLM)
    │   returns: text and/or tool calls
    ▼
-Capability selection ──────────────┐
-   │ skill call                    │ request_capability(...)
-   ▼                               ▼
-Skill catalog                 CapabilityGap recorded
-(src/agentlab/skills/catalog.py)   ("no skill provides X")
+Capability selection ──────────────┬──────────────────────────────┐
+   │ skill call                    │ request_capability(...)      │ propose_skill_plan(...)
+   ▼                               ▼                              ▼
+Skill catalog                 CapabilityGap recorded         SkillLearner (src/agentlab/learning/)
+(src/agentlab/skills/catalog.py)   ("no skill provides X")   rules → approve plan → build + harness
+   │                               │                         → approve code → store → catalog
    │ execute(name, args)           │
    ▼                               │
 Skill implementation               │
@@ -46,7 +47,8 @@ Evaluation  (src/agentlab/evals/) ──► Flywheel  (src/agentlab/flywheel/) �
 | Skill catalog | `skills/catalog.py` | Discovers `skills/*/skill.toml`, exposes tool specs, executes skills safely. |
 | Evals | `evals/` | Load TOML cases, run them against the agent or a single skill, score the checks. |
 | Flywheel | `flywheel/loop.py` | Record each eval run, diff it against the previous one, and group failures by mode. |
-| CLI | `cli.py` | `ask`, `eval`, `flywheel`, `skills`. Reads settings once and wires everything together. |
+| Learning | `learning/` | Plan rules, approval gates, skill author, runtime eval harness, sandbox, local store. Optional: the loop works without it. |
+| CLI | `cli.py` | `ask`, `chat`, `eval`, `flywheel`, `skills`. Reads settings once and wires everything together. |
 
 ## Why the boundaries exist
 
@@ -55,6 +57,8 @@ Evaluation  (src/agentlab/evals/) ──► Flywheel  (src/agentlab/flywheel/) �
 **Skill boundary (`SkillCatalog`).** The loop never knows how a skill works. Future web, flight, browser or MCP-backed skills plug in behind the same `execute(name, args) -> SkillResult`. Adding a skill means adding a manifest and a function; the loop does not change. Expected skill failures (`SkillError`) become error observations the model can react to. Bugs still raise.
 
 **Capability gaps (`request_capability`).** The loop always offers one built-in tool through which the model can say: "this task needs a capability none of my tools provide." The gap is recorded in the trace, so evals can check for it, and the model is told to answer honestly instead of guessing. This is the seam for auto-discovery: in a later stage, handling `request_capability` can mean searching a wider catalog and loading a matching skill, with no change to the loop's shape.
+
+**Learning (`propose_skill_plan`).** With a `SkillLearner`, the loop offers a second built-in tool through which the model can propose building generic skills. The model proposes; deterministic rules, the user (twice) and the runtime harness decide. A learned skill enters the catalog as an ordinary skill whose function runs generated code in the sandbox, so the catalog boundary (`execute(name, args) -> SkillResult`) is unchanged. See [skills.md § Learned skills](skills.md#learned-skills).
 
 **The trace is the evaluation surface (`AgentRun`).** Evals check *behavior*: which skills were used, which gaps were reported and how the run stopped. They don't just check the final string. That is what makes "did the agent recognize it needed fresh information?" testable.
 
@@ -79,9 +83,10 @@ Web content and tool results are **untrusted input**. This matters as soon as St
 - **External side effects.** Skills that act on the world (submitting forms, booking, sending) need an explicit human approval gate. The bootstrap has none, and flight research starts read-only: search, compare and recommend, with no booking.
 - **Authentication boundaries.** Skills don't share credentials with the model. Secrets stay in config (`Secret`) and are never placed in prompts or logs.
 - **Sensitive user data.** Travel preferences and personal details go only to the skills that need them.
+- **Generated code.** Learned skills are model-written code, so they are untrusted. They are restricted to pure data transformations: no network, files or side effects. They are checked against an allowlist, run in an isolated, resource-limited process, tested by the runtime harness, and shown to the user before first use. Network-capable skills stay built-in and reviewed.
 
 Anthropic's browser-use guidance warns specifically that web pages can carry prompt injections, and recommends isolating sensitive data and actions and keeping approval controls. Treat it as a requirement for any browser skill.
 
 ## Deliberately absent
 
-These are absent on purpose: planning, memory, recursion, and long-running autonomy; MCP; browser automation; databases and dashboards. **MCP** is a plausible future *transport* for skills: an MCP-backed skill would sit behind the same `SkillCatalog` boundary. It gets adopted once the skill boundary has proven stable, not before.
+These are absent on purpose: general planning (the only planning is the small, rule-checked skill plan), memory, recursion, and long-running autonomy; MCP; browser automation; databases and dashboards. **MCP** is a plausible future *transport* for skills: an MCP-backed skill would sit behind the same `SkillCatalog` boundary. It gets adopted once the skill boundary has proven stable, not before.

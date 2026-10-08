@@ -1,7 +1,8 @@
 """Run eval cases and score them.
 
 Agent cases run the full loop and are checked against the trace (answer, skills used,
-capability gaps, stop reason). Skill cases call one skill directly: component evaluation.
+capability gaps, learning, stop reason). Each runs on a fresh agent, so a skill learned in one
+case can't leak into another. Skill cases call one skill directly: component evaluation.
 """
 
 from __future__ import annotations
@@ -10,28 +11,33 @@ import re
 from typing import TYPE_CHECKING
 
 from agentlab.evals.models import CheckResult, EvalCase, EvalResult, EvalSummary
+from agentlab.learning.approval import FixedApprover
 from agentlab.llm.client import LLMError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     from agentlab.agent.loop import Agent, AgentRun
-    from agentlab.evals.models import Expectations
+    from agentlab.evals.models import Approval, Expectations
     from agentlab.skills.catalog import SkillCatalog
     from agentlab.skills.models import SkillResult
 
 
-def run_suite(cases: Iterable[EvalCase], agent: Agent, catalog: SkillCatalog) -> EvalSummary:
-    return EvalSummary(tuple(run_case(case, agent, catalog) for case in cases))
+def run_suite(
+    cases: Iterable[EvalCase], agent_for: Callable[[], Agent], catalog: SkillCatalog
+) -> EvalSummary:
+    """``agent_for`` builds a fresh agent (with fresh learned-skill storage) per agent case."""
+    return EvalSummary(tuple(run_case(case, agent_for, catalog) for case in cases))
 
 
-def run_case(case: EvalCase, agent: Agent, catalog: SkillCatalog) -> EvalResult:
+def run_case(case: EvalCase, agent_for: Callable[[], Agent], catalog: SkillCatalog) -> EvalResult:
     match case:
         case EvalCase(kind="skill", skill=str() as skill):
             checks = skill_checks(case.expect, catalog.execute(skill, case.arguments))
         case EvalCase(kind="agent", task=str() as task):
             try:
-                checks = agent_checks(case.expect, agent.run(task))
+                run = agent_for().run(task, approver=approver_for(case.approval))
+                checks = agent_checks(case.expect, run)
             except LLMError as exc:
                 return EvalResult(case.id, case.kind, case.tags, (), error=f"LLM error: {exc}")
         case _:
@@ -59,10 +65,28 @@ def agent_checks(expect: Expectations, run: AgentRun) -> list[CheckResult]:
         reported = [gap.capability for gap in run.capability_gaps]
         detail = f"expected gap {expect.capability_gap!r}, reported {reported}"
         checks.append(_check("capability_gap", expect.capability_gap in reported, detail))
+    for skill in expect.skills_learned:
+        learned = skill in run.skills_learned
+        checks.append(
+            _check("skills_learned", learned, f"{skill!r} not in {list(run.skills_learned)}")
+        )
+    if expect.learning_outcome is not None:
+        outcomes = [outcome.outcome for outcome in run.learning]
+        if expect.learning_outcome == "none":
+            passed = not outcomes
+        else:
+            passed = expect.learning_outcome in outcomes
+        detail = f"expected learning outcome {expect.learning_outcome!r}, got {outcomes}"
+        checks.append(_check("learning_outcome", passed, detail))
     if expect.stop_reason is not None:
         detail = f"expected {expect.stop_reason!r}, got {run.stop_reason!r}"
         checks.append(_check("stop_reason", run.stop_reason == expect.stop_reason, detail))
     return checks
+
+
+def approver_for(approval: Approval) -> FixedApprover:
+    """The scripted human for a case. Evals never prompt anyone."""
+    return FixedApprover(plan=approval != "deny_plan", skill=approval == "approve")
 
 
 def skill_checks(expect: Expectations, result: SkillResult) -> list[CheckResult]:

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 from agentlab.evals.models import EvalCase, Expectations
 from agentlab.learning.models import SkillCandidate, SkillContract
 from agentlab.learning.sandbox import ALLOWED_MODULES
+from agentlab.llm.client import LLMError
 from agentlab.models import ToolSpec, UserMessage
 from agentlab.skills.catalog import manifest_from_data
 from agentlab.skills.models import SkillManifestError
@@ -38,9 +39,10 @@ You write the contract for a small, generic, pure-Python skill BEFORE anyone imp
 
 Return, through submit_contract:
 - input_schema and output_schema: JSON Schema objects (type "object"). Keep them small.
-- tests: at least 6 cases. Each has a unique snake_case name, a kind ("normal", "edge" or \
-"error"), arguments, and exactly one of expect_output (the complete expected output object) \
-or expect_error (a short substring of the error message the skill should raise).
+- tests: 6 to 12 cases with short inputs. Each has a unique snake_case name, a kind \
+("normal", "edge" or "error"), arguments, and exactly one of expect_output (the complete \
+expected output object) or expect_error (a short substring of the error message the skill \
+should raise).
   Include at least one "edge" case (empty or boundary input) and at least one "error" case \
 (invalid input). Use varied inputs so a hard-coded implementation would fail.
   Only write expected outputs you are certain of. Prefer cases whose answer is unambiguous.
@@ -57,6 +59,8 @@ returns a dict matching the output schema exactly.
 - Not allowed: open, eval, exec, getattr, type, dir, str.format (use f-strings), any name or \
 attribute starting with "_" (except defining or calling __init__), async, global.
 - Solve the general problem. Never special-case the example inputs.
+- Keep it compact: well under 150 lines. A small skill that handles the common cases well \
+beats a large one.
 
 Return, through submit_skill, the code plus a one-sentence description, when_to_use (when a \
 model should pick this tool) and limitations (what it cannot do)."""
@@ -156,11 +160,15 @@ class SkillAuthor:
         return SkillCandidate(manifest, code)
 
     def _ask(self, system: str, brief: JSONObject, tool: ToolSpec) -> JSONObject:
-        response = self._llm.generate(
-            system=system,
-            messages=[UserMessage(json.dumps(brief, indent=2))],
-            tools=[tool],
-        )
+        try:
+            response = self._llm.generate(
+                system=system,
+                messages=[UserMessage(json.dumps(brief, indent=2))],
+                tools=[tool],
+            )
+        except LLMError as exc:
+            # A failed authoring call is a failed attempt, not a failed run.
+            raise AuthorError(f"the model call failed: {exc}") from exc
         return _submitted(response, tool)
 
 

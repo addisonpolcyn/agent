@@ -50,8 +50,9 @@ This stage proves that the agent discovers a capability, selects it, executes it
 
 Today the whole catalog is offered on every turn, and `request_capability` records gaps. Next:
 
-- [ ] Let `request_capability` search a wider catalog by capability tag and load the match into the current run, so it becomes a real discovery step rather than only a report.
-- [ ] Add evals for "discovers a skill it wasn't initially offered".
+- [x] On-demand learning: when no skill fits, the agent proposes generic skills (rule-checked, at most 5 steps and 2 new skills), the user approves, a runtime harness builds and tests them in a sandbox, the user approves the code, and the skill is used and kept locally (`.agentlab/learned/`). Evals cover ready, declined, rejected, reuse and not-worth-learning, offline and live.
+- [ ] Let `request_capability` search a wider catalog by capability tag and load the match into the current run.
+- [ ] Promote a learned skill into the repo (review, then a manifest and in-package code with evals). This is manual for now.
 
 There is no marketplace and no plugin ecosystem. A local catalog is enough.
 

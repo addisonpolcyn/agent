@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING
 from agentlab.agent.loop import Agent
 from agentlab.evals.cases import load_cases
 from agentlab.evals.runner import run_suite
-from agentlab.llm.fake import OfflineLLM
+from agentlab.learning.author import SkillAuthor
+from agentlab.learning.learner import SkillLearner
+from agentlab.llm.fake import FixtureAuthorLLM, OfflineLLM
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,7 +36,14 @@ def test_flight_request_reports_missing_web_capability(catalog: SkillCatalog) ->
     assert "can't" in run.answer
 
 
-def test_offline_suite_passes(catalog: SkillCatalog, cases_dir: Path) -> None:
-    summary = run_suite(load_cases(cases_dir), Agent(OfflineLLM(), catalog), catalog)
+def test_offline_suite_passes(catalog: SkillCatalog, cases_dir: Path, tmp_path: Path) -> None:
+    stores = iter(range(1000))
+
+    def agent_for() -> Agent:
+        store = tmp_path / str(next(stores))
+        learner = SkillLearner(SkillAuthor(FixtureAuthorLLM()), store)
+        return Agent(OfflineLLM(), catalog, learner=learner)
+
+    summary = run_suite(load_cases(cases_dir), agent_for, catalog)
     failures = {r.case_id: r.failed_checks for r in summary.results if not r.passed}
     assert failures == {}

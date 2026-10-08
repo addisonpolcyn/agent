@@ -29,10 +29,18 @@ stop_reason = "answered"
 | `no_skills_used` | agent | No skill was invoked. |
 | `capability_gap` | agent | The agent reported this missing capability through `request_capability`. |
 | `stop_reason` | agent | The run ended as expected (`answered` or `max_steps`). |
+| `skills_learned` | agent | Each listed skill was learned during the run. |
+| `learning_outcome` | agent | A `propose_skill_plan` call ended this way (`ready`, `failed`, `declined_plan`, `declined_skill`, `refused_too_large`, `refused_reuse`, `refused_not_learnable`, `malformed`). `"none"` means learning was never attempted. |
 | `output_equals` | skill | The skill's output equals this table. |
 | `error_contains` | skill | The skill's error message contains this string. |
 
 Unknown checks, or checks used with the wrong kind, are rejected when the case loads. A case must declare at least one check.
+
+Agent cases may set `approval = "approve" | "deny_plan" | "deny_skill"` (default `deny_plan`). It is the scripted human at the two learning gates; evals never prompt anyone. Every agent case runs on a fresh agent with its own empty learned-skills directory, so nothing learned in one case leaks into another or into `.agentlab/`.
+
+## Runtime evaluation of learned skills
+
+The eval suite checks the agent. The runtime harness in `learning/harness.py` checks each generated skill *while the agent runs*: blind-written and held-out tests, output schema, determinism, non-constant output, no hard-coded inputs, and at most 3 attempts. See [skills.md § Learned skills](skills.md#learned-skills). Its per-attempt results are saved in `report.json` next to the skill, and they are the place to look when learning fails.
 
 ## Scoring
 

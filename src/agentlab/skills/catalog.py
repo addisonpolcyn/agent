@@ -2,7 +2,8 @@
 
 Discovery reads ``<skills_dir>/*/skill.toml``. Each manifest names its implementation as
 ``module:function``; implementations must live inside the ``agentlab`` package, so nothing
-from the skills directory itself is ever executed.
+from the skills directory itself is ever executed. Learned skills join through
+``with_skills``; their functions run generated code only in the sandbox (``agentlab.learning``).
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from agentlab.models import ToolSpec
 from agentlab.skills.models import SkillError, SkillManifest, SkillManifestError, SkillResult
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Iterable, Mapping
     from pathlib import Path
 
     from agentlab.models import JSONObject
@@ -46,6 +47,17 @@ class SkillCatalog:
 
     def __contains__(self, name: object) -> bool:
         return name in self._skills
+
+    def with_skills(self, skills: Iterable[tuple[SkillManifest, SkillFunction]]) -> SkillCatalog:
+        """A new catalog with extra skills (e.g. learned ones). Names must stay unique."""
+        merged = dict(self._skills)
+        for manifest, run in skills:
+            if manifest.name in merged:
+                raise SkillManifestError(
+                    f"duplicate skill name {manifest.name!r} in {manifest.path}"
+                )
+            merged[manifest.name] = _LoadedSkill(manifest, run)
+        return SkillCatalog(merged)
 
     def tool_specs(self) -> list[ToolSpec]:
         return [_tool_spec(skill.manifest) for skill in self._skills.values()]

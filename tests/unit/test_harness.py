@@ -184,6 +184,14 @@ def test_author_that_does_not_submit_is_a_failed_attempt() -> None:
     assert report.reports[0].checks[0].name == "author"
 
 
+def test_model_failure_while_authoring_is_a_failed_attempt() -> None:
+    _, author = build(contract_call())  # the code call finds the script exhausted: LLMError
+    report = build_skill(SPEC, author, manifest_path=MANIFEST_PATH)
+
+    assert report.verdict == "failed"
+    assert "the model call failed" in report.reports[0].checks[0].detail
+
+
 def test_weak_test_suite_is_rejected_before_any_code_is_written() -> None:
     weak = {**CONTRACT, "tests": TESTS[:2]}
     llm, author = build(contract_call(weak), contract_call(weak))

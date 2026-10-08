@@ -6,12 +6,18 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from agentlab.agent.loop import REQUEST_CAPABILITY, SYSTEM_PROMPT, Agent
-from agentlab.llm.fake import ScriptedLLM
+from agentlab.agent.loop import LEARNING_PROMPT, REQUEST_CAPABILITY, SYSTEM_PROMPT, Agent
+from agentlab.learning.approval import FixedApprover
+from agentlab.learning.author import SkillAuthor
+from agentlab.learning.learner import SkillLearner
+from agentlab.learning.plan import PROPOSE_SKILL_PLAN
+from agentlab.llm.fake import FixtureAuthorLLM, ScriptedLLM
 from agentlab.models import AssistantMessage, LLMResponse, ToolCall, ToolResultMessage, UserMessage
 from agentlab.skills.catalog import SkillCatalog
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from agentlab.models import JSONObject
 
 
@@ -121,6 +127,87 @@ def test_reserved_skill_name_is_rejected(catalog: SkillCatalog) -> None:
     class Reserved(SkillCatalog):
         def __contains__(self, name: object) -> bool:
             return name == REQUEST_CAPABILITY.name
+
+    with pytest.raises(ValueError, match="reserved"):
+        Agent(ScriptedLLM([]), Reserved({}))
+
+
+PLAN: JSONObject = {
+    "goal": "Count words",
+    "steps": [
+        {
+            "summary": "Count the words in a text",
+            "capability": "text_statistics",
+            "new_skill": {
+                "name": "word_count",
+                "purpose": "Count words.",
+                "inputs": "text",
+                "outputs": "count",
+            },
+            "needs_network": False,
+            "has_side_effects": False,
+        }
+    ],
+}
+
+
+def learning_agent(llm: ScriptedLLM, catalog: SkillCatalog, store: Path) -> Agent:
+    learner = SkillLearner(SkillAuthor(FixtureAuthorLLM()), store)
+    return Agent(llm, catalog, learner=learner)
+
+
+def test_learning_is_offered_only_with_a_learner(catalog: SkillCatalog, tmp_path: Path) -> None:
+    plain = ScriptedLLM([answer("ok")])
+    Agent(plain, catalog).run("x")
+    learning = ScriptedLLM([answer("ok")])
+    learning_agent(learning, catalog, tmp_path).run("x")
+
+    assert PROPOSE_SKILL_PLAN.name not in [t.name for t in plain.calls[0].tools]
+    assert [t.name for t in learning.calls[0].tools][-1] == PROPOSE_SKILL_PLAN.name
+    assert learning.calls[0].system == SYSTEM_PROMPT + LEARNING_PROMPT
+
+
+def test_learned_skill_is_used_in_a_fresh_append_only_conversation(
+    catalog: SkillCatalog, tmp_path: Path
+) -> None:
+    llm = ScriptedLLM(
+        [
+            call(PROPOSE_SKILL_PLAN.name, PLAN),
+            call("word_count", {"text": "a b c"}, "c2"),
+            answer("3 words, using the newly learned word_count skill."),
+        ]
+    )
+    run = learning_agent(llm, catalog, tmp_path).run(
+        "count the words in 'a b c'", approver=FixedApprover(plan=True, skill=True)
+    )
+
+    assert run.skills_learned == ("word_count",)
+    assert run.skills_used == ("word_count",)
+    assert run.invocations[0].result.output == {"count": 3}
+    restart = llm.calls[1]
+    assert len(restart.messages) == 1, "earlier turns are never edited, only left behind"
+    (first,) = restart.messages
+    assert isinstance(first, UserMessage)
+    assert first.text.startswith("count the words in 'a b c'")
+    assert "word_count" in first.text
+    assert "word_count" in [t.name for t in restart.tools]
+
+
+def test_learning_is_declined_without_an_approver(catalog: SkillCatalog, tmp_path: Path) -> None:
+    llm = ScriptedLLM([call(PROPOSE_SKILL_PLAN.name, PLAN), answer("I can't without approval.")])
+    run = learning_agent(llm, catalog, tmp_path).run("count the words in 'a b'")
+
+    assert [o.outcome for o in run.learning] == ["declined_plan"]
+    observation = llm.calls[1].messages[-1]
+    assert isinstance(observation, ToolResultMessage)
+    assert observation.is_error
+    assert observation.content["outcome"] == "declined_plan"
+
+
+def test_propose_skill_plan_is_reserved(catalog: SkillCatalog) -> None:
+    class Reserved(SkillCatalog):
+        def __contains__(self, name: object) -> bool:
+            return name == PROPOSE_SKILL_PLAN.name
 
     with pytest.raises(ValueError, match="reserved"):
         Agent(ScriptedLLM([]), Reserved({}))
