@@ -4,7 +4,8 @@
          (approve tested code) -> saved under the local learned dir -> added to the catalog
 
 Learned skills live only in the local learned directory (``.agentlab/learned/`` by default,
-git-ignored). They are reloaded on later runs, and always execute in the sandbox.
+git-ignored). They are reloaded on later runs and run in a separate process, unrestricted
+(see ``sandbox.py``): the user's approval of the code is the safeguard.
 """
 
 from __future__ import annotations
@@ -13,7 +14,6 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from agentlab.learning.approval import FileGrants
 from agentlab.learning.author import LEARNED_IMPLEMENTATION
 from agentlab.learning.harness import MAX_ATTEMPTS, build_skill
 from agentlab.learning.plan import PlanError, parse_plan, validate_plan
@@ -34,7 +34,6 @@ if TYPE_CHECKING:
     from agentlab.skills.catalog import SkillCatalog, SkillFunction
     from agentlab.skills.models import SkillManifest
 
-MAX_ACCESS_REQUESTS = 5
 SKILL_FILE = "skill.json"
 CODE_FILE = "skill.py"
 TESTS_FILE = "tests.json"
@@ -46,8 +45,6 @@ _GUIDANCE = {
     "refused_too_large": "Tell the user this is too large to learn in one go and suggest "
     "splitting it into smaller requests.",
     "refused_reuse": "Use the existing skills instead of building new ones.",
-    "refused_not_learnable": "Tell the user plainly what you cannot do. If the task needs live "
-    "or recent information, call request_capability with 'current_information'. Do not guess.",
     "declined_plan": "The user said no. Tell them plainly what you cannot do without it.",
     "failed": "Tell the user the skill isn't working after a reasonable number of attempts, "
     "and why. Do not guess the answer instead.",
@@ -85,17 +82,15 @@ class SkillLearner:
         store_dir: Path,
         *,
         run: Runner = run_sandboxed,
-        grants: FileGrants | None = None,
         max_attempts: int = MAX_ATTEMPTS,
     ) -> None:
         self._author = author
         self._store_dir = store_dir
         self._run = run
-        self._grants = grants or FileGrants()
         self._max_attempts = max_attempts
 
     def load_learned(self) -> list[tuple[SkillManifest, SkillFunction]]:
-        return load_learned(self._store_dir, self._run, self._grants)
+        return load_learned(self._store_dir, self._run)
 
     def learn(
         self, arguments: JSONObject, catalog: SkillCatalog, approver: Approver | None
@@ -132,7 +127,7 @@ class SkillLearner:
                 return LearningOutcome(
                     "declined_skill", reason, tuple(learned), tuple(reports)
                 ), catalog
-            saved = _save_skill(self._store_dir, report, self._run, self._grants)
+            saved = _save_skill(self._store_dir, report, self._run)
             catalog = catalog.with_skills([saved])
             learned.append(spec.name)
         summary = "; ".join(report.summary() for report in reports)
@@ -140,9 +135,9 @@ class SkillLearner:
 
 
 def load_learned(
-    store_dir: Path, run: Runner = run_sandboxed, grants: FileGrants | None = None
+    store_dir: Path, run: Runner = run_sandboxed
 ) -> list[tuple[SkillManifest, SkillFunction]]:
-    """Every saved skill in ``store_dir``. Malformed or unsafe ones fail loudly, like
+    """Every saved skill in ``store_dir``. Malformed ones fail loudly, like
     ``discover_catalog``: the files may have been edited by hand."""
     skills: list[tuple[SkillManifest, SkillFunction]] = []
     for path in sorted(store_dir.glob(f"*/{SKILL_FILE}")):
@@ -156,34 +151,19 @@ def load_learned(
         problems = check_source(code)
         if problems:
             raise SkillManifestError(f"{path.parent / CODE_FILE}: {'; '.join(problems)}")
-        skills.append((manifest, sandboxed_skill(manifest, code, run, grants or FileGrants())))
+        skills.append((manifest, sandboxed_skill(code, run)))
     return skills
 
 
-def sandboxed_skill(
-    manifest: SkillManifest, code: str, run: Runner, grants: FileGrants
-) -> SkillFunction:
+def sandboxed_skill(code: str, run: Runner) -> SkillFunction:
     """Adapt generated code to the catalog's skill contract.
 
-    A crash in generated code is untrusted output, not a bug of ours, so it becomes a
-    ``SkillError`` like any other. A read outside the approved folders asks the user (through
-    ``grants``) and, if allowed, runs again; the skills are read-only, so rerunning is safe.
+    A crash in generated code is the skill's failure, not a bug of ours, so it becomes a
+    ``SkillError`` like any other.
     """
 
     def execute(arguments: Mapping[str, Any]) -> JSONObject:
-        for _ in range(MAX_ACCESS_REQUESTS):
-            result = run(
-                code,
-                dict(arguments),
-                reads_files=manifest.reads_files,
-                readable_roots=grants.roots,
-            )
-            if result.needs_access is None:
-                break
-            if not grants.request(manifest.name, result.needs_access):
-                raise SkillError(f"the user did not allow reading {result.needs_access}")
-        else:
-            raise SkillError(f"asked for more than {MAX_ACCESS_REQUESTS} folders in one call")
+        result = run(code, dict(arguments))
         if result.output is not None:
             return result.output
         raise SkillError(result.error or f"learned skill crashed: {result.crash}")
@@ -198,7 +178,7 @@ def _save_report(store_dir: Path, report: HarnessReport) -> None:
 
 
 def _save_skill(
-    store_dir: Path, report: HarnessReport, run: Runner, grants: FileGrants
+    store_dir: Path, report: HarnessReport, run: Runner
 ) -> tuple[SkillManifest, SkillFunction]:
     assert report.candidate is not None
     assert report.contract is not None
@@ -238,7 +218,7 @@ def _save_skill(
             "reads_files": manifest.reads_files,
         },
     )
-    return manifest, sandboxed_skill(manifest, code, run, grants)
+    return manifest, sandboxed_skill(code, run)
 
 
 def _write_json(path: Path, data: JSONObject) -> None:

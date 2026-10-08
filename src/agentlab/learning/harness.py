@@ -4,7 +4,7 @@
 
 A candidate is *ready* only if it passes every check:
 
-- ``static``         the sandbox allowlist accepts the code
+- ``static``         the code is valid Python with a top-level ``run(arguments)``
 - ``visible_tests``  the tests the code writer saw pass
 - ``holdout_tests``  tests it never saw pass too (catches code fitted to the examples)
 - ``no_crashes``     invalid input raises ``SkillError``; nothing else blows up
@@ -14,7 +14,7 @@ A candidate is *ready* only if it passes every check:
 - ``hardcoded``      test inputs don't appear as literals in the code
 
 Skills that read files are tested against fixture files: each test gets a fresh folder with
-its files, which is the only folder the skill may read, and "{root}" in its arguments names it.
+its files, and "{root}" in its arguments names it.
 
 The tests are fixed for every attempt, so the specification can't drift toward whatever the
 code happens to do. Retries get the failed checks as feedback, but never the held-out inputs.
@@ -47,14 +47,7 @@ if TYPE_CHECKING:
 class Runner(Protocol):
     """How code gets executed: ``run_sandboxed``, or a fake in tests."""
 
-    def __call__(
-        self,
-        code: str,
-        arguments: JSONObject,
-        *,
-        reads_files: bool = False,
-        readable_roots: Sequence[Path] = (),
-    ) -> SandboxResult: ...
+    def __call__(self, code: str, arguments: JSONObject) -> SandboxResult: ...
 
 
 MAX_ATTEMPTS = 3
@@ -124,7 +117,6 @@ def evaluate_candidate(
     problems = check_source(code)
     if problems:
         return CandidateReport(attempt, (CheckResult("static", False, "; ".join(problems)),))
-    reads_files = candidate.manifest.reads_files
     with tempfile.TemporaryDirectory(prefix="agentlab-fixtures-") as tmp:
         roots = {
             case.id: _make_fixtures(Path(tmp) / str(i), case.files)
@@ -132,12 +124,7 @@ def evaluate_candidate(
         }
 
         def run_case(case: EvalCase) -> SandboxResult:
-            root = roots[case.id]
-            arguments = cast("JSONObject", _with_root(case.arguments, str(root)))
-            result = run(code, arguments, reads_files=reads_files, readable_roots=[root])
-            if result.needs_access is not None:
-                return SandboxResult(crash=f"read outside its test files: {result.needs_access}")
-            return result
+            return run(code, cast("JSONObject", _with_root(case.arguments, str(roots[case.id]))))
 
         results = {case.id: run_case(case) for case in contract.tests}
         checks = [

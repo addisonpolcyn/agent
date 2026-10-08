@@ -22,8 +22,6 @@ from agentlab.llm.fake import ScriptedLLM
 from agentlab.models import LLMResponse, ToolCall, UserMessage
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from agentlab.learning.models import SkillContract
     from agentlab.models import JSONObject
 
@@ -87,7 +85,7 @@ def run(arguments):
     answers = {"hello world": 2, "one, two; three": 3, "": 0}
     return {"count": answers.get(text, 1)}
 """
-UNSAFE = "import os\ndef run(arguments):\n    return {'count': len(os.listdir('/'))}\n"
+UNUSABLE = "def count(arguments):\n    return {'count': 0}\n"
 
 
 def contract_call(contract: JSONObject = CONTRACT) -> LLMResponse:
@@ -211,7 +209,7 @@ def test_weak_test_suite_is_rejected_before_any_code_is_written() -> None:
         (CRASHES, {"no_crashes", "visible_tests"}),
         (WRONG_SCHEMA, {"output_schema", "visible_tests", "holdout_tests"}),
         (HARDCODED, {"hardcoded", "holdout_tests"}),
-        (UNSAFE, {"static"}),
+        (UNUSABLE, {"static"}),
     ],
 )
 def test_junk_is_caught_by_the_right_checks(code: str, expected: set[str]) -> None:
@@ -234,13 +232,7 @@ def test_nondeterminism_is_caught() -> None:
     candidate = author.write_code(SPEC, the_contract, the_contract.tests, [], MANIFEST_PATH)
     outputs = iter(range(1000))
 
-    def flaky(
-        code: str,
-        arguments: JSONObject,
-        *,
-        reads_files: bool = False,
-        readable_roots: Sequence[Path] = (),
-    ) -> SandboxResult:
+    def flaky(code: str, arguments: JSONObject) -> SandboxResult:
         return SandboxResult(output={"count": next(outputs)})
 
     report = evaluate_candidate(candidate, the_contract, frozenset(), run=flaky)

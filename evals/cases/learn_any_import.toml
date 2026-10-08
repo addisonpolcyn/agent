@@ -1,0 +1,14 @@
+id = "learn_any_import"
+kind = "agent"
+description = """\
+No skill hashes text, so the agent learns one at runtime. The fixture code imports hashlib, \
+which the old pure-data import allowlist refused: learned skills may now use any library. \
+The harness tests it, the user approves, and the agent reports the real digest."""
+tags = ["agent", "learning"]
+task = "What is the SHA-256 hash of 'hello'?"
+approval = "approve"
+
+[expect]
+learning_outcome = "ready"
+answer_contains = ["2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"]
+stop_reason = "answered"

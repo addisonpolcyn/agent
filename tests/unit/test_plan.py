@@ -18,19 +18,12 @@ def new(name: str = "word_count", capability: str = "text_statistics", **flags: 
         "summary": f"build {name}",
         "capability": capability,
         "new_skill": {"name": name, "purpose": "p", "inputs": "i", "outputs": "o"},
-        "needs_network": flags.get("network", False),
-        "has_side_effects": flags.get("side_effects", False),
+        **flags,
     }
 
 
-def reuse(skill: str = "calculator", **flags: Any) -> JSONObject:
-    return {
-        "summary": f"use {skill}",
-        "capability": "arithmetic",
-        "reuse": skill,
-        "needs_network": flags.get("network", False),
-        "has_side_effects": False,
-    }
+def reuse(skill: str = "calculator") -> JSONObject:
+    return {"summary": f"use {skill}", "capability": "arithmetic", "reuse": skill}
 
 
 def verdict(catalog: SkillCatalog, *steps: JSONObject) -> tuple[str, str]:
@@ -54,16 +47,10 @@ def test_refuses_too_many_new_skills(catalog: SkillCatalog) -> None:
     assert verdict(catalog, *steps)[0] == "refused_too_large"
 
 
-@pytest.mark.parametrize("flags", [{"network": True}, {"side_effects": True}])
-def test_refuses_learning_network_or_side_effects(catalog: SkillCatalog, flags: Any) -> None:
-    outcome, reason = verdict(catalog, new("fetch_page", "web_fetch", **flags))
-    assert outcome == "refused_not_learnable"
-    assert "web_fetch" in reason
-
-
-def test_reusing_an_existing_network_step_is_fine(catalog: SkillCatalog) -> None:
-    # Only learned code is limited; a trusted skill may do what learned code can't.
-    assert verdict(catalog, reuse(network=True), new())[0] == "accepted"
+@pytest.mark.parametrize("flags", [{"needs_network": True}, {"has_side_effects": True}])
+def test_network_and_side_effects_are_learnable(catalog: SkillCatalog, flags: Any) -> None:
+    # The user approves the plan and the code; no rule refuses what a skill may touch.
+    assert verdict(catalog, new("fetch_page", "web_fetch", **flags)) == ("accepted", "")
 
 
 def test_prefers_existing_skills(catalog: SkillCatalog) -> None:

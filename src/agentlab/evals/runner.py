@@ -112,7 +112,7 @@ def _run_conversation(agent: Agent, case: EvalCase, task: str) -> AgentRun:
 
 def approver_for(approval: Approval) -> FixedApprover:
     """The scripted human for a case. Evals never prompt anyone."""
-    return FixedApprover(plan=approval != "deny_plan", skill=approval in {"approve", "deny_files"})
+    return FixedApprover(plan=approval != "deny_plan", skill=approval == "approve")
 
 
 def skill_checks(expect: Expectations, result: SkillResult) -> list[CheckResult]:

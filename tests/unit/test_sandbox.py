@@ -1,4 +1,4 @@
-"""The sandbox runs generated skill code as untrusted input."""
+"""Learned skills run unrestricted in their own process (see sandbox.py)."""
 
 from __future__ import annotations
 
@@ -57,19 +57,12 @@ def test_allows_subclassing_html_parser() -> None:
 @pytest.mark.parametrize(
     ("code", "problem"),
     [
-        ("import os\ndef run(a):\n    return {}\n", "import of 'os'"),
-        ("import socket\ndef run(a):\n    return {}\n", "import of 'socket'"),
-        ("from urllib import request\ndef run(a):\n    return {}\n", "import from 'urllib'"),
-        ("def run(a):\n    return {'x': open('/etc/passwd').read()}\n", "'open'"),
-        ("def run(a):\n    return {'x': eval('1')}\n", "'eval'"),
-        ("def run(a):\n    return {'x': getattr(a, 'keys')}\n", "'getattr'"),
-        ("def run(a):\n    return {'x': ().__class__.__bases__}\n", "'__class__'"),
-        ("def run(a):\n    return {'x': '{0.__class__}'.format(a)}\n", "'format'"),
         ("def run(a, b):\n    return {}\n", "missing a top-level 'def run(arguments)'"),
+        ("def helper(a):\n    return {}\n", "missing a top-level 'def run(arguments)'"),
         ("def run(a):\n    return {\n", "syntax error"),
     ],
 )
-def test_rejects_unsafe_or_unusable_code(code: str, problem: str) -> None:
+def test_rejects_unusable_code(code: str, problem: str) -> None:
     problems = check_source(code)
     assert any(problem in p for p in problems), problems
     assert run_sandboxed(code, {}).crash is not None
@@ -80,20 +73,57 @@ def test_rejects_oversized_code() -> None:
     assert check_source(code) == [f"code is larger than {MAX_SOURCE_BYTES} bytes"]
 
 
-def test_import_guard_holds_at_runtime_too() -> None:
-    # Statically fine, but the runtime __import__ still refuses modules off the allowlist.
-    code = "def run(a):\n    import json as j\n    return {'ok': j.dumps(1)}\n"
-    assert run_sandboxed(code, {}).output == {"ok": "1"}
+def test_any_import_and_builtin_is_allowed() -> None:
+    code = (
+        "import os, socket, subprocess, urllib.request\n"
+        "def run(a):\n"
+        "    return {'cpus': os.cpu_count() > 0, 'sum': eval('1 + 2'), 'name': type(a).__name__}\n"
+    )
+    assert check_source(code) == []
+    assert run_sandboxed(code, {}).output == {"cpus": True, "sum": 3, "name": "dict"}
+
+
+def test_skills_can_write_files_and_run_commands(tmp_path: Path) -> None:
+    code = (
+        "import subprocess, sys\n"
+        "def run(a):\n"
+        "    with open(a['path'], 'w') as f:\n"
+        "        f.write('written')\n"
+        "    done = subprocess.run([sys.executable, '-c', 'print(42)'], capture_output=True)\n"
+        "    return {'out': done.stdout.decode().strip()}\n"
+    )
+    target = tmp_path / "out.txt"
+    assert run_sandboxed(code, {"path": str(target)}).output == {"out": "42"}
+    assert target.read_text() == "written"
+
+
+def test_skills_see_the_users_environment_and_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AGENTLAB_TEST_VALUE", "visible")
+    monkeypatch.chdir(tmp_path)
+    code = (
+        "import os\n"
+        "def run(a):\n"
+        "    return {'env': os.environ['AGENTLAB_TEST_VALUE'], 'cwd': os.getcwd()}\n"
+    )
+    assert run_sandboxed(code, {}).output == {"env": "visible", "cwd": str(tmp_path)}
+
+
+def test_printing_does_not_break_the_reply() -> None:
+    code = "def run(a):\n    print('debug')\n    return {'ok': True}\n"
+    assert run_sandboxed(code, {}).output == {"ok": True}
+
+
+def test_agentlab_internals_are_not_importable_by_accident() -> None:
+    # The runner lives next to models.py; -P keeps its folder off sys.path.
+    code = "def run(a):\n    import models\n    return {}\n"
+    assert run_sandboxed(code, {}).crash == "ModuleNotFoundError: No module named 'models'"
 
 
 def test_infinite_loop_times_out() -> None:
     result = run_sandboxed("def run(a):\n    while True:\n        pass\n", {}, timeout=1)
     assert result.crash == "timed out after 1s"
-
-
-def test_memory_is_limited() -> None:
-    result = run_sandboxed("def run(a):\n    return {'x': 'a' * (10 ** 10)}\n", {})
-    assert result.crash == "out of memory"
 
 
 def test_non_dict_result_is_a_crash() -> None:
@@ -115,58 +145,25 @@ def folder(tmp_path: Path) -> Path:
     (tmp_path / "sub").mkdir()
     (tmp_path / "a.txt").write_text("hello")
     (tmp_path / "sub" / "b.md").write_text("nested")
-    (tmp_path / ".env").write_text("API_KEY=secret")
-    (tmp_path / "id_rsa").write_text("-----BEGIN")
     return tmp_path
 
 
-def test_file_functions_exist_only_for_file_skills(folder: Path) -> None:
-    result = run_sandboxed(LISTER, {"path": str(folder)})
-    assert result.crash == "NameError: name 'list_dir' is not defined"
-
-
-def test_lists_and_reads_inside_approved_roots(folder: Path) -> None:
-    listed = run_sandboxed(LISTER, {"path": str(folder)}, reads_files=True, readable_roots=[folder])
+def test_file_helpers_list_and_read(folder: Path) -> None:
+    listed = run_sandboxed(LISTER, {"path": str(folder)})
     assert listed.output == {
         "entries": [
             {"name": "a.txt", "type": "file", "size": 5},
             {"name": "sub", "type": "dir", "size": None},
         ]
-    }, "secret files are never listed"
-    nested = str(folder / "sub" / "b.md")
-    read = run_sandboxed(READER, {"path": nested}, reads_files=True, readable_roots=[folder])
+    }
+    read = run_sandboxed(READER, {"path": str(folder / "sub" / "b.md")})
     assert read.output == {"text": "nested"}
 
 
-def test_secrets_are_never_read_even_inside_a_root(folder: Path) -> None:
-    for name in (".env", "id_rsa"):
-        path = str(folder / name)
-        result = run_sandboxed(READER, {"path": path}, reads_files=True, readable_roots=[folder])
-        assert result.error is not None
-        assert "looks like a secret" in result.error
-
-
-def test_reading_outside_the_roots_asks_for_access(folder: Path) -> None:
-    sub = folder / "sub"
-    result = run_sandboxed(LISTER, {"path": str(folder)}, reads_files=True, readable_roots=[sub])
-    assert result.needs_access == str(folder.resolve())
-
-
-def test_access_requests_cannot_be_swallowed(folder: Path) -> None:
-    code = (
-        "def run(a):\n    try:\n        return {'e': list_dir(a['path'])}\n"
-        "    except Exception:\n        return {'e': []}\n"
-    )
-    result = run_sandboxed(code, {"path": str(folder)}, reads_files=True, readable_roots=[])
-    assert result.needs_access == str(folder.resolve())
-
-
-def test_symlinks_are_resolved_before_checking_roots(
-    folder: Path, tmp_path_factory: pytest.TempPathFactory
-) -> None:
-    outside = tmp_path_factory.mktemp("outside")
-    (outside / "private.txt").write_text("not yours")
-    (folder / "link").symlink_to(outside)
-    path = str(folder / "link" / "private.txt")
-    result = run_sandboxed(READER, {"path": path}, reads_files=True, readable_roots=[folder])
-    assert result.needs_access == str(outside.resolve())
+def test_file_helpers_raise_skill_errors(folder: Path) -> None:
+    missing = run_sandboxed(READER, {"path": str(folder / "nope")})
+    assert missing.error is not None
+    assert "no such file or directory" in missing.error
+    not_a_dir = run_sandboxed(LISTER, {"path": str(folder / "a.txt")})
+    assert not_a_dir.error is not None
+    assert "not a directory" in not_a_dir.error

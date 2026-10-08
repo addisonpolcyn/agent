@@ -5,7 +5,7 @@ A **skill** is a capability the agent can discover and invoke: something it can 
 Two kinds exist:
 
 - **Built-in skills** live in the repo: a manifest in `skills/` and trusted code in the `agentlab` package. Today there is one, `calculator`. Planned ones include `web_research` and `flight_search` (see [roadmap.md](roadmap.md)).
-- **Learned skills** are generated at runtime when the agent needs a capability it lacks and the user approves. They live only in the local `.agentlab/learned/` directory and always run in a sandbox. See [Learned skills](#learned-skills).
+- **Learned skills** are generated at runtime when the agent needs a capability it lacks and the user approves. They live only in the local `.agentlab/learned/` directory and run unrestricted in their own process. See [Learned skills](#learned-skills).
 
 ## Anatomy
 
@@ -93,7 +93,6 @@ propose_skill_plan ─► validate_plan ─► gate 1: "I don't have this, but I
 | Rule | Outcome |
 |---|---|
 | More than 5 steps, or more than 2 new skills | `refused_too_large`: split the request |
-| A *new* skill needs the network or has side effects (including writing files) | `refused_not_learnable`: report the gap instead. Reusing an existing trusted skill for such a step is fine. |
 | A new skill duplicates an existing name or capability, or nothing new is needed | `refused_reuse`: use what exists |
 | Unknown reused skill, non-snake_case or duplicate names, bad shape | `malformed` |
 
@@ -103,7 +102,7 @@ New skills must be generic: name them for the operation (`html_to_text`, `json_q
 
 | Check | Catches |
 |---|---|
-| `static` | Code outside the sandbox allowlist |
+| `static` | Code that isn't valid Python with a top-level `run(arguments)` |
 | `visible_tests`, `holdout_tests` | Wrong answers, and code fitted to the examples it saw |
 | `no_crashes` | Exceptions instead of a clean `SkillError` |
 | `output_schema` | Output that doesn't match the declared schema |
@@ -113,26 +112,28 @@ New skills must be generic: name them for the operation (`html_to_text`, `json_q
 
 Failed checks go back to the code writer as feedback, but the held-out inputs never do. The tests stay fixed across attempts. The harness gives up after 3 attempts, or earlier if an attempt repeats the previous failures exactly, and the agent tells the user it isn't working and why.
 
-**Reading local files.** A plan step can set `reads_files`. That skill, and only that skill, gets two read-only functions in the sandbox, never `open`:
+**Files, network and commands.** Learned skills may do anything Python can. Every skill also gets two conveniences with friendly `SkillError`s:
 
 - `list_dir(path)` returns entries with `name`, `type` and `size`.
 - `read_text(path)` returns up to 1 MB of text.
 
-Relative paths mean the directory agentlab runs in. Symlinks are resolved before any check. Secret-looking files (`.env*`, `id_rsa*` and other keys, `*.pem`/`*.key`, `.ssh`, `.aws`, `.gnupg`, `credentials*` and similar) are never listed or read, even inside an approved folder. The first time a skill touches a folder that isn't approved, it stops with `needs_access`. The user is asked ("Skill 'list_files' wants to read ~/Downloads and everything under it… Allow?"), and on yes it reruns; the skill is read-only, so rerunning is safe. Approvals (`FileGrants`) cover subfolders, last for the session only, and are never saved. A refusal is remembered for the session. With nobody to ask, the answer is no.
+A plan step sets `reads_files` when the skill reads files; that makes the harness require fixture-file tests. Skills whose real output depends on the machine, the clock or live data (CPU usage, a web page) are told to take that data as an input, such as raw text or a path with the real source as the default, so their tests stay deterministic.
 
-The harness tests file skills on fixture files. Each test declares `files` (relative path → text). The harness creates them in a fresh folder, substitutes that folder for `{root}` in the arguments, and makes it the only readable folder. So the user's real folders are never touched before they approve.
+Relative paths mean the directory agentlab runs in.
 
-**Sandbox** (`learning/sandbox.py`). Generated code is untrusted. It is checked against an AST allowlist: pure-data stdlib imports only (`json`, `re`, `html.parser`, …); no `open`, `eval`, `getattr` or `type`; no `_private` or dunder access except `__init__`; no `str.format`. It then runs in a separate `python -I` process with an empty environment and working directory, restricted builtins, a timeout and CPU, memory, file and process limits. There is no OS-level network block; that rests on the import allowlist. This is defense in depth, and the human review at gate 2 is part of it.
+The harness tests file skills on fixture files. Each test declares `files` (relative path → text). The harness creates them in a fresh folder and substitutes that folder for `{root}` in the arguments. Nothing stops a candidate from touching other paths during its tests, so a model that ignores its instructions could; that's the cost of running unrestricted.
 
-**Storage.** `.agentlab/learned/<name>/` holds `skill.json` (the manifest, `implementation = "sandbox:skill.py"`, plus `reads_files` when set), `skill.py`, `tests.json` and `report.json` (the verdict, every attempt's checks and the generated tests). A failed or rejected build leaves only `report.json`, which is never loaded. Learned skills are reloaded on later runs. A tampered or unsafe file fails loudly at startup. To forget a skill, delete its directory.
+**Skill process** (`learning/sandbox.py`). Not a security boundary. Generated code runs in a separate `python -P` process with the user's environment and working directory, full builtins and any import, and a 30-second timeout. The process keeps a crash or hang from taking the agent down, and keeps `print` output out of the reply. agentlab is a single-user toy for now, so the safeguard is the user reading the code at gate 2; the prompt says it runs with full access. The previous sandbox (import allowlist, restricted builtins, rlimits, per-folder approval, secret hiding) is in git history, to be restored with real OS-level enforcement before anyone else uses agentlab.
+
+**Storage.** `.agentlab/learned/<name>/` holds `skill.json` (the manifest, `implementation = "sandbox:skill.py"`, plus `reads_files` when set), `skill.py`, `tests.json` and `report.json` (the verdict, every attempt's checks and the generated tests). A failed or rejected build leaves only `report.json`, which is never loaded. Learned skills are reloaded on later runs. A tampered file that isn't a usable skill fails loudly at startup. To forget a skill, delete its directory.
 
 **Within a run.** When a skill becomes ready, the loop continues in a fresh conversation that starts with the task, as if the run had started with the skill. The tool list changes at that point, and some providers (Claude's thinking blocks) bind earlier turns to the tools they were produced with, so the earlier conversation is left behind rather than edited.
 
-**Offline.** `OfflineLLM` proposes learning for two fixture capabilities (word counting, and listing a folder), and `FixtureAuthorLLM` supplies canned `word_count` and `list_files` contracts and code, all labeled as fixtures. Offline runs and CI therefore exercise the real rules, gates, sandbox, harness and store.
+**Offline.** `OfflineLLM` proposes learning for three fixture capabilities (word counting, listing a folder, and SHA-256 hashing), and `FixtureAuthorLLM` supplies canned `word_count`, `list_files` and `sha256_hex` contracts and code, all labeled as fixtures. `sha256_hex` imports `hashlib`, which the old allowlist refused. Offline runs and CI therefore exercise the real rules, gates, skill process, harness and store.
 
 ## Current limitations
 
-- **Built-in implementations are in-package Python only.** Manifests are discovered from the filesystem, but code is never loaded from the `skills/` directory. This is deliberate: no arbitrary code execution, no dynamic installs, no marketplace. The one exception is learned skills, which run only in the sandbox (above).
+- **Built-in implementations are in-package Python only.** Manifests are discovered from the filesystem, but code is never loaded from the `skills/` directory. This is deliberate: no arbitrary code execution, no dynamic installs, no marketplace. The one exception is learned skills, which run in their own process after the user approves the code (above).
 - **No schema validation of arguments by the catalog.** Each skill validates its own input. Revisit when there are enough skills for duplication to hurt.
 - **One flat catalog, offered in full on every turn.** That's fine for a handful of skills. Larger catalogs will need search-based discovery, which is the job of `request_capability` in Stage 3.
 - **Synchronous execution.** No timeouts or cancellation yet. Web skills will need them.

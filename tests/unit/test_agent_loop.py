@@ -144,8 +144,6 @@ PLAN: JSONObject = {
                 "inputs": "text",
                 "outputs": "count",
             },
-            "needs_network": False,
-            "has_side_effects": False,
         }
     ],
 }

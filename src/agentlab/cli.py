@@ -15,7 +15,7 @@ from agentlab.config import ConfigError, Settings
 from agentlab.evals.cases import EvalCaseError, load_cases
 from agentlab.evals.runner import format_summary, run_suite
 from agentlab.flywheel.loop import record_iteration
-from agentlab.learning.approval import ConsoleApprover, FileGrants
+from agentlab.learning.approval import ConsoleApprover
 from agentlab.learning.author import LEARNED_IMPLEMENTATION, SkillAuthor
 from agentlab.learning.learner import SkillLearner, load_learned
 from agentlab.llm.claude import ClaudeClient
@@ -50,8 +50,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             case "ask" | "chat":
                 console = ConsoleApprover()
                 learned_dir = None if args.no_learn else settings.learned_dir
-                grants = FileGrants(console.confirm)
-                agent = _agent(settings, catalog, args.offline, learned_dir, grants)
+                agent = _agent(settings, catalog, args.offline, learned_dir)
                 if args.command == "ask":
                     return _ask(agent, args.task, console)
                 return _chat(agent, console)
@@ -93,10 +92,8 @@ def _agent(
     catalog: SkillCatalog,
     offline: bool,
     learned_dir: Path | None,
-    grants: FileGrants,
 ) -> Agent:
-    """An agent; with ``learned_dir`` it can learn skills and keeps them there. ``grants``
-    asks for, and remembers for the session, folders that learned skills may read."""
+    """An agent; with ``learned_dir`` it can learn skills and keeps them there."""
     llm: LLMClient
     author_llm: LLMClient
     if offline:
@@ -108,7 +105,7 @@ def _agent(
         author_llm = llm
     if learned_dir is None:
         return Agent(llm, catalog)
-    learner = SkillLearner(SkillAuthor(author_llm), learned_dir, grants=grants)
+    learner = SkillLearner(SkillAuthor(author_llm), learned_dir)
     return Agent(llm, catalog, learner=learner)
 
 
@@ -180,9 +177,7 @@ def _run_suite(settings: Settings, catalog: SkillCatalog, offline: bool) -> Eval
     with tempfile.TemporaryDirectory(prefix="agentlab-eval-") as root:
 
         def agent_for(case: EvalCase) -> Agent:
-            # The case's scripted human also answers folder-access questions.
-            grants = FileGrants(lambda _question: case.approval == "approve")
-            return _agent(settings, catalog, offline, Path(tempfile.mkdtemp(dir=root)), grants)
+            return _agent(settings, catalog, offline, Path(tempfile.mkdtemp(dir=root)))
 
         return run_suite(cases, agent_for, catalog, offline=offline)
 

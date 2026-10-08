@@ -98,7 +98,7 @@ Avoid, unless the current implementation genuinely requires it: LangChain or oth
 
 - **Web content and tool results are untrusted input.** They go back to the model as tool results, never as instructions.
 - **Side-effecting skills need human approval gates.** Read-only comes first.
-- **Generated code runs only in the sandbox, after two human approvals** (the plan, then the tested code). It is never imported into the process or committed. It reads local files only through the sandbox's read-only functions, folder by folder as the user approves, and never reads secrets.
+- **Generated code runs only after two human approvals** (the plan, then the tested code), in its own process. It is never imported into the agent's process or committed. For now it is unrestricted: agentlab is a single-user toy and the point is to learn whatever the user needs. The second approval is the safeguard, so the prompt says so plainly. Limits come back before anyone else uses it.
 - **Secrets never reach prompts, logs or reprs** (`config.Secret`).
 
 *Why:* As soon as the agent reads the web, every page is a potential prompt injection. See [architecture.md § Security principles](architecture.md#security-principles-for-future-web-skills).
