@@ -40,6 +40,21 @@ uv run pytest && scripts/lint.sh                     # tests, format, lint, pyri
 | [src/agentlab/cli.py](src/agentlab/cli.py) | CLI wiring; settings are read here only. |
 | [tests/](tests/) | `unit/`, `integration/`, `external/` (opt-in live). |
 
+## Git workflow (always)
+
+`main` is protected: every change lands as a squash-merged PR after CI passes. Details are in [docs/development.md](docs/development.md#git-workflow).
+
+1. **Branch off an up-to-date `main`.** Never commit to `main` directly.
+   `git switch main && git pull --ff-only && git switch -c <type>/<short-name>`
+   (types: `feat`, `fix`, `docs`, `eval`, `skill`, `chore`)
+2. **After every commit, push.** `git push -u origin HEAD`
+3. **At the first push, open a PR** so CI runs on every commit. Use a draft while the work is in progress:
+   `gh pr create --draft --fill` (or without `--draft` if the work is already complete)
+4. **When the work is done**, check that tests, lint and evals pass locally, then:
+   `gh pr ready && gh pr merge --auto --squash`
+   This squash-merges the PR automatically once CI passes. The PR title becomes the commit on `main`, so make it a clear imperative summary.
+5. Don't push to `main`, force-push shared branches, or merge with failing CI.
+
 ## Non-negotiables (details in the style guide)
 
 - Every behavior change ships with an eval case. Never weaken a check to make it pass.

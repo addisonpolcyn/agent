@@ -74,6 +74,33 @@ For anything that touches model behavior (prompts, tool descriptions, skill sele
 
 `pytest` deselects `live` tests by default (`-m "not live"` in `pyproject.toml`). The live tests also skip themselves unless `AGENTLAB_LIVE_TESTS=1` and a key are set.
 
+## Git workflow
+
+Every change goes through a pull request that is **squash-merged once CI passes**:
+
+```text
+main ──► branch ──► commit ──► push ──► PR (draft) ──► more commits + pushes
+                                                         │  CI runs on each push
+                                                         ▼
+                                     ready + auto-merge ──► CI green ──► squash into main
+```
+
+| Step | Command |
+|---|---|
+| Start | `git switch main && git pull --ff-only && git switch -c feat/short-name` |
+| Commit and push (every time) | `git commit -m "..." && git push -u origin HEAD` |
+| Open a PR at the first push | `gh pr create --draft --fill` |
+| Finish | `gh pr ready && gh pr merge --auto --squash` |
+| Check CI | `gh pr checks --watch` |
+
+Why it works this way:
+
+- **Small branches, one logical change each.** Squash merging turns each PR into one commit on `main`, so `main`'s history reads as a list of changes. The PR title becomes that commit's message.
+- **Push and open a PR early.** CI runs on every push, so problems show up while they're cheap to fix. The draft state shows the work isn't finished.
+- **CI is the merge gate, not memory.** Offline CI is deterministic, so a green check means the change is safe to land. Live Claude evals vary from run to run, so they stay advisory: run `agentlab flywheel` locally. See [evaluation.md](evaluation.md).
+
+One-time setup: `gh auth login`. Branch protection on `main` requires a pull request and a passing `check` job, allows squash merges only, enables auto-merge, and deletes branches after merge.
+
 ## CI
 
 `.github/workflows/ci.yml` runs, in order: `uv sync --locked`, the format check, lint, pyright, pytest, `eval --offline` and `flywheel --offline`. It uses no secrets and no network beyond installing dependencies.
