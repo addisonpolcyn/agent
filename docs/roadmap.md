@@ -32,12 +32,13 @@ NORTH STAR  evaluation-driven agent that can discover and use capabilities to so
 
 Project tooling, CI, `LLMClient` with fakes, the agent loop, a skill catalog with one deterministic skill (`calculator`), TOML eval cases, and the flywheel. Everything runs offline.
 
-## Stage 1: Real Claude (adapter built, not yet verified live)
+## Stage 1: Real Claude ✅ (verified live; runs in CI)
 
 `ClaudeClient` (`src/agentlab/llm/claude.py`) implements `LLMClient` on the Messages API, using native tool use, refusal fallbacks, explicit effort, and verbatim replay of thinking blocks.
 
-- [ ] Run `AGENTLAB_LIVE_TESTS=1 uv run pytest -m live` and `uv run agentlab flywheel` with a key.
-- [ ] Tune `SYSTEM_PROMPT` against the eval suite until the live pass rate matches offline.
+- [x] Live tests pass, and the eval suite passes 5/5 against Claude (after fixing a too-strict number check and steering capability names toward general ones).
+- [x] Live tests and evals run in CI (`live-claude` job) and are required to merge.
+- [ ] Keep the live pass rate at 100% as cases get harder.
 
 **Done when** the full eval suite passes against Claude across several runs.
 

@@ -52,7 +52,7 @@ The north-star fixture `flight_sfo_tokyo` is an agent case. It currently expects
 
 `uv run agentlab eval --offline` runs the suite with `OfflineLLM`, a deterministic stand-in. It needs no key and no network, and CI runs it on every push. It exits non-zero if any case fails.
 
-`OfflineLLM` is not a model. Offline runs prove the plumbing: discovery, selection by declared capability, execution, observation, gap reporting and scoring. They say little about the quality of a real model's judgment. For that, run without `--offline`, which uses Claude and requires `ANTHROPIC_API_KEY`.
+`OfflineLLM` is not a model. Offline runs prove the plumbing: discovery, selection by declared capability, execution, observation, gap reporting and scoring. They say little about the quality of a real model's judgment. For that, run without `--offline`, which uses Claude and requires `ANTHROPIC_API_KEY` (in `.env` or the environment). CI runs the suite against Claude in the `live-claude` job, which must pass to merge.
 
 ## How failures feed development
 

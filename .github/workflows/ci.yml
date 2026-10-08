@@ -11,7 +11,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    # No secrets and no network beyond dependency installation: everything here runs offline.
+    # Offline and deterministic: no secrets, no network beyond dependency installation.
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -31,3 +31,34 @@ jobs:
         run: uv run agentlab eval --offline
       - name: Offline flywheel
         run: uv run agentlab flywheel --offline
+
+  live-claude:
+    # Real Claude calls, using the ANTHROPIC_API_KEY repository secret. Required for merging.
+    # Runs only after the offline checks pass, so broken code never spends API credits.
+    # Pull requests from forks never receive secrets, so this job is skipped for them
+    # (maintainers run it after reviewing the change).
+    needs: check
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: live-claude-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - name: Require API key secret
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Repository secret ANTHROPIC_API_KEY is not set (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Live tests
+        run: uv run pytest -m live
+      - name: Live evaluation
+        run: uv run agentlab eval

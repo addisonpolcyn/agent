@@ -6,12 +6,12 @@ A small, evaluation-driven agent that discovers and uses **skills** to solve tas
 
 ```bash
 uv sync                                              # set up
-set -a; source .env; set +a                          # load ANTHROPIC_API_KEY (Claude runs only)
 uv run agentlab ask --offline "What is 123 * 456?"   # run the agent (drop --offline to use Claude)
 uv run agentlab chat --offline                       # interactive: ask questions until 'exit'
 uv run agentlab eval --offline                       # eval gate (non-zero exit on failure)
 uv run agentlab flywheel --offline                   # record an iteration + failure summary in runs/
 uv run pytest && scripts/lint.sh                     # tests, format, lint, pyright strict
+uv run pytest -m live                                # real Claude tests (key from .env)
 ```
 
 ## Docs
@@ -60,5 +60,5 @@ uv run pytest && scripts/lint.sh                     # tests, format, lint, pyri
 - Every behavior change ships with an eval case. Never weaken a check to make it pass.
 - Never route on task text. The model selects skills from their manifests.
 - Only `llm/claude.py` imports `anthropic`. The loop never knows how skills work.
-- Everything in CI runs offline. Fakes are labeled as fakes, and fabricated data is never presented as real.
+- The default test run and the `check` CI job stay offline. Real Claude runs only in `pytest -m live` and the `live-claude` job. Fakes are labeled as fakes, and fabricated data is never presented as real.
 - When documented behavior changes, update the doc and this map in the same change.

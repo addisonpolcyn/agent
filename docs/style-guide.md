@@ -87,8 +87,8 @@ Avoid, unless the current implementation genuinely requires it: LangChain or oth
 
 ## Testing
 
-- **Deterministic and offline by default.** *Why:* Flaky tests get ignored. CI must pass without keys or network.
-- **Three tiers.** `unit/` (one component), `integration/` (real pieces wired together offline) and `external/` (real services, opt-in with `-m live`).
+- **Deterministic and offline by default.** *Why:* Flaky tests get ignored. The everyday `pytest` and the `check` CI job need no keys or network. Real-model tests are opted into explicitly (`-m live`, the `live-claude` job), and a live failure is investigated, never just re-run until green.
+- **Three tiers.** `unit/` (one component), `integration/` (real pieces wired together offline) and `external/` (real services, opt-in with `-m live`; CI runs them in a separate job).
 - **`ScriptedLLM` for state transitions, `OfflineLLM` for end-to-end runs.** *Why:* Scripted responses test the loop's exact behavior on each kind of model turn. The offline stand-in exercises the full plumbing with realistic flow.
 
 ## Security

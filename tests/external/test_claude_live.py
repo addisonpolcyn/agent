@@ -1,8 +1,12 @@
-"""Real Claude API. Opt-in: AGENTLAB_LIVE_TESTS=1 uv run pytest -m live"""
+"""Real Claude API. Opt in with `uv run pytest -m live`; the key comes from env or .env.
+
+Skips when no key is configured. CI checks for the key separately, so a missing secret there
+fails loudly instead of skipping.
+"""
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -14,20 +18,21 @@ from agentlab.llm.claude import ClaudeClient
 if TYPE_CHECKING:
     from agentlab.skills.catalog import SkillCatalog
 
+SETTINGS = Settings.load(Path(__file__).resolve().parents[2] / ".env")
+
 pytestmark = [
     pytest.mark.live,
     pytest.mark.skipif(
-        os.environ.get("AGENTLAB_LIVE_TESTS") != "1" or not os.environ.get("ANTHROPIC_API_KEY"),
-        reason="set AGENTLAB_LIVE_TESTS=1 and ANTHROPIC_API_KEY to run live tests",
+        SETTINGS.anthropic_api_key is None,
+        reason="set ANTHROPIC_API_KEY (environment or .env) to run live tests",
     ),
 ]
 
 
 @pytest.fixture
 def agent(catalog: SkillCatalog) -> Agent:
-    settings = Settings.from_env()
-    assert settings.anthropic_api_key is not None
-    client = ClaudeClient(api_key=settings.anthropic_api_key.reveal(), model=settings.model)
+    assert SETTINGS.anthropic_api_key is not None
+    client = ClaudeClient(api_key=SETTINGS.anthropic_api_key.reveal(), model=SETTINGS.model)
     return Agent(client, catalog)
 
 
