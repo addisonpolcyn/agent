@@ -85,7 +85,7 @@ Web content and tool results are **untrusted input**. This matters as soon as St
 - **External side effects.** Skills that act on the world (submitting forms, booking, sending) need an explicit human approval gate. The bootstrap has none, and flight research starts read-only: search, compare and recommend, with no booking.
 - **Authentication boundaries.** Skills don't share credentials with the model. Secrets stay in config (`Secret`) and are never placed in prompts or logs.
 - **Sensitive user data.** Travel preferences and personal details go only to the skills that need them.
-- **Generated code.** Learned skills are model-written code, so they are untrusted. They are restricted to pure data transformations: no network, files or side effects. They are checked against an allowlist, run in an isolated, resource-limited process, tested by the runtime harness, and shown to the user before first use. Network-capable skills stay built-in and reviewed.
+- **Generated code.** Learned skills are model-written code, so they are untrusted. They transform data and, when the plan says so, read local files through two read-only functions, only in folders the user approves and never secret-looking files. They never get the network, writes or other side effects. They are checked against an allowlist, run in an isolated, resource-limited process, tested by the runtime harness, and shown to the user before first use. Network-capable skills stay built-in and reviewed.
 
 Anthropic's browser-use guidance warns specifically that web pages can carry prompt injections, and recommends isolating sensitive data and actions and keeping approval controls. Treat it as a requirement for any browser skill.
 

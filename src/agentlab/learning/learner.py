@@ -13,6 +13,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from agentlab.learning.approval import FileGrants
 from agentlab.learning.author import LEARNED_IMPLEMENTATION
 from agentlab.learning.harness import MAX_ATTEMPTS, build_skill
 from agentlab.learning.plan import PlanError, parse_plan, validate_plan
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     from agentlab.skills.catalog import SkillCatalog, SkillFunction
     from agentlab.skills.models import SkillManifest
 
+MAX_ACCESS_REQUESTS = 5
 SKILL_FILE = "skill.json"
 CODE_FILE = "skill.py"
 TESTS_FILE = "tests.json"
@@ -83,15 +85,17 @@ class SkillLearner:
         store_dir: Path,
         *,
         run: Runner = run_sandboxed,
+        grants: FileGrants | None = None,
         max_attempts: int = MAX_ATTEMPTS,
     ) -> None:
         self._author = author
         self._store_dir = store_dir
         self._run = run
+        self._grants = grants or FileGrants()
         self._max_attempts = max_attempts
 
     def load_learned(self) -> list[tuple[SkillManifest, SkillFunction]]:
-        return load_learned(self._store_dir, self._run)
+        return load_learned(self._store_dir, self._run, self._grants)
 
     def learn(
         self, arguments: JSONObject, catalog: SkillCatalog, approver: Approver | None
@@ -128,14 +132,15 @@ class SkillLearner:
                 return LearningOutcome(
                     "declined_skill", reason, tuple(learned), tuple(reports)
                 ), catalog
-            catalog = catalog.with_skills([_save_skill(self._store_dir, report, self._run)])
+            saved = _save_skill(self._store_dir, report, self._run, self._grants)
+            catalog = catalog.with_skills([saved])
             learned.append(spec.name)
         summary = "; ".join(report.summary() for report in reports)
         return LearningOutcome("ready", summary, tuple(learned), tuple(reports)), catalog
 
 
 def load_learned(
-    store_dir: Path, run: Runner = run_sandboxed
+    store_dir: Path, run: Runner = run_sandboxed, grants: FileGrants | None = None
 ) -> list[tuple[SkillManifest, SkillFunction]]:
     """Every saved skill in ``store_dir``. Malformed or unsafe ones fail loudly, like
     ``discover_catalog``: the files may have been edited by hand."""
@@ -151,16 +156,34 @@ def load_learned(
         problems = check_source(code)
         if problems:
             raise SkillManifestError(f"{path.parent / CODE_FILE}: {'; '.join(problems)}")
-        skills.append((manifest, sandboxed_skill(code, run)))
+        skills.append((manifest, sandboxed_skill(manifest, code, run, grants or FileGrants())))
     return skills
 
 
-def sandboxed_skill(code: str, run: Runner = run_sandboxed) -> SkillFunction:
-    """Adapt generated code to the catalog's skill contract. A crash in generated code is
-    untrusted output, not a bug of ours, so it becomes a ``SkillError`` like any other."""
+def sandboxed_skill(
+    manifest: SkillManifest, code: str, run: Runner, grants: FileGrants
+) -> SkillFunction:
+    """Adapt generated code to the catalog's skill contract.
+
+    A crash in generated code is untrusted output, not a bug of ours, so it becomes a
+    ``SkillError`` like any other. A read outside the approved folders asks the user (through
+    ``grants``) and, if allowed, runs again; the skills are read-only, so rerunning is safe.
+    """
 
     def execute(arguments: Mapping[str, Any]) -> JSONObject:
-        result = run(code, dict(arguments))
+        for _ in range(MAX_ACCESS_REQUESTS):
+            result = run(
+                code,
+                dict(arguments),
+                reads_files=manifest.reads_files,
+                readable_roots=grants.roots,
+            )
+            if result.needs_access is None:
+                break
+            if not grants.request(manifest.name, result.needs_access):
+                raise SkillError(f"the user did not allow reading {result.needs_access}")
+        else:
+            raise SkillError(f"asked for more than {MAX_ACCESS_REQUESTS} folders in one call")
         if result.output is not None:
             return result.output
         raise SkillError(result.error or f"learned skill crashed: {result.crash}")
@@ -175,7 +198,7 @@ def _save_report(store_dir: Path, report: HarnessReport) -> None:
 
 
 def _save_skill(
-    store_dir: Path, report: HarnessReport, run: Runner
+    store_dir: Path, report: HarnessReport, run: Runner, grants: FileGrants
 ) -> tuple[SkillManifest, SkillFunction]:
     assert report.candidate is not None
     assert report.contract is not None
@@ -194,6 +217,7 @@ def _save_skill(
                     "arguments": case.arguments,
                     "expect_output": case.expect.output_equals,
                     "expect_error": case.expect.error_contains,
+                    "files": case.files,
                 }
                 for case in report.contract.tests
             ],
@@ -211,9 +235,10 @@ def _save_skill(
             "input_schema": manifest.input_schema,
             "output_schema": manifest.output_schema,
             "implementation": manifest.implementation,
+            "reads_files": manifest.reads_files,
         },
     )
-    return manifest, sandboxed_skill(code, run)
+    return manifest, sandboxed_skill(manifest, code, run, grants)
 
 
 def _write_json(path: Path, data: JSONObject) -> None:

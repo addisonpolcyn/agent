@@ -12,8 +12,8 @@ if TYPE_CHECKING:
     from agentlab.models import JSONObject
 
 type CaseKind = Literal["agent", "skill"]
-type Approval = Literal["approve", "deny_plan", "deny_skill"]
-APPROVALS: tuple[Approval, ...] = ("approve", "deny_plan", "deny_skill")
+type Approval = Literal["approve", "deny_plan", "deny_skill", "deny_files"]
+APPROVALS: tuple[Approval, ...] = ("approve", "deny_plan", "deny_skill", "deny_files")
 
 
 @dataclass(frozen=True)
@@ -49,6 +49,9 @@ class EvalCase:
     task: str | None = None
     skill: str | None = None
     arguments: JSONObject = field(default_factory=dict[str, object])
+    # Skill cases for file-reading skills: relative path -> text, created in a fresh folder
+    # whose path replaces "{root}" in the arguments.
+    files: dict[str, str] = field(default_factory=dict[str, str])
     approval: Approval = "deny_plan"
     # Turns sent first, in the same conversation, so the task can refer back to them.
     earlier_turns: tuple[str, ...] = ()

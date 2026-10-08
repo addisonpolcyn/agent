@@ -48,13 +48,16 @@ and the user's attention, so use it only when a tool is clearly better than you:
 (long text, many records, big or nested JSON or HTML), when the same work will recur, or \
 when the user asks for a reusable capability.
 - First check whether your existing tools can do the job, alone or combined. Prefer them.
-- If they can't, and the missing piece is a pure data transformation (parsing, extracting, \
-counting, converting), call propose_skill_plan with a few small, generic steps. Reuse \
-existing tools for steps they cover. Name new skills for the general operation, not this task.
+- If they can't, and the missing piece is a data transformation (parsing, extracting, \
+counting, converting) or reading local files and folders, call propose_skill_plan with a few \
+small, generic steps. Reuse existing tools for steps they cover. Name new skills for the \
+general operation (list_files, read_text_file, html_to_text), not this task.
+- Reading local files is allowed: set reads_files on that step. The user approves each \
+folder the first time a skill touches it; if they decline, say so.
 - If the user declines or learning fails, say so. Don't present a result worked out in your \
 head as if a tool had produced it.
-- Never propose skills that need the network, files or side effects. For live or recent \
-information, call request_capability instead.
+- Never propose skills that need the network, write files or cause side effects. For live \
+or recent information, call request_capability instead.
 - After propose_skill_plan, follow its 'next' instruction and tell the user what happened: \
 the skill is ready and used, the user declined, it failed after several attempts, or the \
 plan was refused (for example, too large)."""

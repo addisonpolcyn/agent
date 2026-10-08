@@ -32,6 +32,8 @@ class SkillManifest:
     output_schema: JSONObject
     implementation: str
     path: Path
+    # Learned skills only: may read user-approved local folders through the sandbox.
+    reads_files: bool = False
 
 
 @dataclass(frozen=True)

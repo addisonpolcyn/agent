@@ -1,6 +1,6 @@
 # agentlab
 
-A small, evaluation-driven agent that discovers and uses **skills** to solve tasks, and improves through an eval → failure → fix flywheel. The north star is a flight-research agent. The project is at **Stage 0 (bootstrap)**: an offline agent loop, one deterministic skill (`calculator`), capability-gap reporting, on-demand skill learning (sandboxed, user-approved, kept in the git-ignored `.agentlab/learned/`), evals and the flywheel. This file is a **map**: the substance lives in the linked docs.
+A small, evaluation-driven agent that discovers and uses **skills** to solve tasks, and improves through an eval → failure → fix flywheel. The north star is a flight-research agent. The project is at **Stage 0 (bootstrap)**: an offline agent loop, one deterministic skill (`calculator`), capability-gap reporting, on-demand skill learning (sandboxed, user-approved, kept in the git-ignored `.agentlab/learned/`; learned skills may read user-approved folders, never the network), evals and the flywheel. This file is a **map**: the substance lives in the linked docs.
 
 ## Commands
 
@@ -61,6 +61,6 @@ uv run pytest -m live                                # real Claude tests (key fr
 - Every behavior change ships with an eval case. Never weaken a check to make it pass.
 - Never route on task text. The model selects skills from their manifests.
 - Only `llm/claude.py` imports `anthropic`. The loop never knows how skills work.
-- Generated skill code runs only in the sandbox, after both approval gates, and is never committed.
+- Generated skill code runs only in the sandbox, after both approval gates, and is never committed. File reads go through the sandbox's read-only functions, per user-approved folder, never secrets.
 - The default test run and the `check` CI job stay offline. Real Claude runs only in `pytest -m live` and the `live-claude` job. Fakes are labeled as fakes, and fabricated data is never presented as real.
 - When documented behavior changes, update the doc and this map in the same change.

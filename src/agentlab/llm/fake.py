@@ -62,6 +62,11 @@ class ScriptedLLM:
 ARITHMETIC = "arithmetic"
 CURRENT_INFORMATION = "current_information"
 TEXT_STATISTICS = "text_statistics"
+DIRECTORY_LISTING = "directory_listing"
+
+_LIST_FILES = re.compile(
+    r"\blist (?:the )?files in (?:the )?([^\s?]+?)[.?]?(?:\s|$)", re.IGNORECASE
+)
 
 _WORD_COUNT = re.compile(r"\bcount (?:the )?words in ['\"](.*)['\"]", re.IGNORECASE)
 # Capabilities the offline stand-in knows how to propose learning, as one generic step each.
@@ -77,7 +82,20 @@ _LEARNABLE: dict[str, JSONObject] = {
         },
         "needs_network": False,
         "has_side_effects": False,
-    }
+    },
+    DIRECTORY_LISTING: {
+        "summary": "List the files in a local folder",
+        "capability": DIRECTORY_LISTING,
+        "new_skill": {
+            "name": "list_files",
+            "purpose": "List the names and types of the entries in a local folder.",
+            "inputs": "path: the folder",
+            "outputs": "entries: name and type of each entry",
+        },
+        "reads_files": True,
+        "needs_network": False,
+        "has_side_effects": False,
+    },
 }
 
 _EXPRESSION = re.compile(r"[\d(][\d\s.()+\-*/%]*[\d)]")
@@ -106,9 +124,12 @@ class OfflineLLM:
 def _plan(task: str, tools: Sequence[ToolSpec], call_id: str) -> LLMResponse:
     expression = _find_expression(task)
     words = _WORD_COUNT.search(task)
+    listing = _LIST_FILES.search(task)
     arguments: JSONObject
     if expression is not None:
         capability, arguments = ARITHMETIC, {"expression": expression}
+    elif listing is not None:
+        capability, arguments = DIRECTORY_LISTING, {"path": listing.group(1)}
     elif words is not None:
         capability, arguments = TEXT_STATISTICS, {"text": words.group(1)}
     elif _FRESHNESS.search(task):
@@ -228,7 +249,63 @@ _WORD_COUNT_FIXTURE: dict[str, JSONObject] = {
         ),
     },
 }  # fmt: skip
-_SKILL_FIXTURES = {"word_count": _WORD_COUNT_FIXTURE}
+_ENTRIES_SCHEMA: JSONObject = {
+    "type": "object",
+    "required": ["entries"],
+    "properties": {
+        "entries": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["name", "type"],
+                "properties": {"name": {"type": "string"}, "type": {"type": "string"}},
+            },
+        }
+    },
+}
+_LIST_FILES_FIXTURE: dict[str, JSONObject] = {
+    "submit_contract": {
+        "input_schema": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {"path": {"type": "string"}},
+        },
+        "output_schema": _ENTRIES_SCHEMA,
+        "tests": [
+            {"name": "two_files", "kind": "normal", "arguments": {"path": "{root}"},
+             "files": {"a.txt": "x", "b.txt": "y"},
+             "expect_output": {"entries": [{"name": "a.txt", "type": "file"},
+                                           {"name": "b.txt", "type": "file"}]}},
+            {"name": "folder_and_file", "kind": "normal", "arguments": {"path": "{root}"},
+             "files": {"docs/readme.md": "hi", "top.txt": "t"},
+             "expect_output": {"entries": [{"name": "docs", "type": "dir"},
+                                           {"name": "top.txt", "type": "file"}]}},
+            {"name": "subfolder", "kind": "edge", "arguments": {"path": "{root}/docs"},
+             "files": {"docs/readme.md": "hi"},
+             "expect_output": {"entries": [{"name": "readme.md", "type": "file"}]}},
+            {"name": "empty_folder", "kind": "edge", "arguments": {"path": "{root}"},
+             "expect_output": {"entries": []}},
+            {"name": "missing", "kind": "error", "arguments": {"path": "{root}/nope"},
+             "expect_error": "no such file"},
+            {"name": "not_a_string", "kind": "error", "arguments": {"path": 5},
+             "expect_error": "path"},
+        ],
+    },
+    "submit_skill": {
+        "description": "Lists the entries of a local folder. [offline fixture]",
+        "when_to_use": "The user asks what is in a local folder.",
+        "limitations": "One level only; names and types, no contents.",
+        "code": (
+            "def run(arguments):\n"
+            "    path = arguments.get('path')\n"
+            "    if not isinstance(path, str) or not path:\n"
+            "        raise SkillError('path must be a non-empty string')\n"
+            "    entries = list_dir(path)\n"
+            "    return {'entries': [{'name': e['name'], 'type': e['type']} for e in entries]}\n"
+        ),
+    },
+}  # fmt: skip
+_SKILL_FIXTURES = {"word_count": _WORD_COUNT_FIXTURE, "list_files": _LIST_FILES_FIXTURE}
 
 
 class FixtureAuthorLLM:

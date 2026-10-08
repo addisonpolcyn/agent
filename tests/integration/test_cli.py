@@ -26,6 +26,8 @@ def repo_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, repo_root: Path) -
     monkeypatch.setenv("AGENTLAB_CASES_DIR", str(repo_root / "evals" / "cases"))
     monkeypatch.setenv("AGENTLAB_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setenv("AGENTLAB_LEARNED_DIR", str(tmp_path / "learned"))
+    # File-reading eval cases name paths relative to the repo root.
+    (tmp_path / "evals").symlink_to(repo_root / "evals")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
 

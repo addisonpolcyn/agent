@@ -9,6 +9,10 @@ Defense in depth, not a perfect sandbox:
    environment, an empty working directory, restricted builtins (see ``_runner.py``), a
    wall-clock timeout and CPU/memory/file/process rlimits (Linux/macOS).
 
+Skills that read files get two read-only functions, never ``open``: ``list_dir`` and
+``read_text``. They see only the ``readable_roots`` the user approved, and never secret-looking
+files. Reading anywhere else stops the skill with ``needs_access`` so the caller can ask.
+
 There is no OS-level network block; it rests on the import allowlist. Humans review the code
 before first use (see ``learner.py``).
 """
@@ -27,6 +31,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from agentlab.models import JSONObject
 
 MAX_SOURCE_BYTES = 8_000
@@ -78,6 +84,14 @@ BANNED_NAMES = frozenset(
 BANNED_ATTRIBUTES = frozenset({"format", "format_map", "Formatter"})
 ALLOWED_DUNDERS = frozenset({"__init__"})
 
+MAX_DIR_ENTRIES = 500
+MAX_READ_BYTES = 1_000_000
+SECRET_NAMES = frozenset(
+    {".aws", ".docker", ".git-credentials", ".gnupg", ".kube", ".netrc", ".pypirc", ".ssh"}
+)
+SECRET_PREFIXES = (".env", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "credentials")
+SECRET_SUFFIXES = (".key", ".pem", ".p12", ".pfx")
+
 
 @dataclass(frozen=True)
 class SandboxResult:
@@ -87,6 +101,8 @@ class SandboxResult:
     output: JSONObject | None = None
     error: str | None = None
     crash: str | None = None
+    # A folder the code tried to read outside its readable roots: ask the user, then rerun.
+    needs_access: str | None = None
 
 
 def check_source(code: str) -> list[str]:
@@ -104,14 +120,42 @@ def check_source(code: str) -> list[str]:
 
 
 def run_sandboxed(
-    code: str, arguments: JSONObject, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+    code: str,
+    arguments: JSONObject,
+    *,
+    reads_files: bool = False,
+    readable_roots: Sequence[Path] = (),
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> SandboxResult:
-    """Execute ``run(arguments)`` from ``code`` in an isolated, resource-limited process."""
+    """Execute ``run(arguments)`` from ``code`` in an isolated, resource-limited process.
+
+    With ``reads_files``, the code gets ``list_dir`` and ``read_text`` limited to
+    ``readable_roots``.
+    """
     problems = check_source(code)
     if problems:
         return SandboxResult(crash="rejected by the sandbox: " + "; ".join(problems))
+    file_access = (
+        {
+            "readable_roots": [str(root) for root in readable_roots],
+            # Relative paths mean the user's working directory, not the sandbox's empty one.
+            "base_dir": str(Path.cwd()),
+            "secret_names": sorted(SECRET_NAMES),
+            "secret_prefixes": list(SECRET_PREFIXES),
+            "secret_suffixes": list(SECRET_SUFFIXES),
+            "max_entries": MAX_DIR_ENTRIES,
+            "max_read_bytes": MAX_READ_BYTES,
+        }
+        if reads_files
+        else None
+    )
     payload = json.dumps(
-        {"code": code, "arguments": arguments, "allowed_modules": sorted(ALLOWED_MODULES)}
+        {
+            "code": code,
+            "arguments": arguments,
+            "allowed_modules": sorted(ALLOWED_MODULES),
+            "file_access": file_access,
+        }
     )
     # The wall-clock timeout normally fires first; the CPU limit is the backstop.
     cpu_seconds = int(timeout) + 1
@@ -204,5 +248,7 @@ def _from_reply(reply: object) -> SandboxResult:
             return SandboxResult(error=error)
         case {"crash": str() as crash}:
             return SandboxResult(crash=crash)
+        case {"needs_access": str() as directory}:
+            return SandboxResult(needs_access=directory)
         case _:
             return SandboxResult(crash="malformed reply from the sandbox")

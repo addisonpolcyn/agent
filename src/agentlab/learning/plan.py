@@ -36,9 +36,10 @@ PROPOSE_SKILL_PLAN = ToolSpec(
         f"{MAX_STEPS} small steps. Each step either reuses an existing tool (reuse = its name) or "
         f"describes a new GENERIC skill (new_skill), at most {MAX_NEW_SKILLS} new skills. Name "
         "new skills for the general operation (html_to_text, word_count), never for this task. "
-        "New skills are pure Python data transforms: they cannot use the network, files or "
-        "cause side effects, so mark any step that needs those and expect the plan to be "
-        "refused. The user must approve the plan, and again the tested code, before use."
+        "New skills are sandboxed Python. They may READ local files (set reads_files; the user "
+        "approves each folder when the skill first touches it) but can never use the network, "
+        "write files or cause side effects: mark steps that need those and expect the plan to "
+        "be refused. The user must approve the plan, and again the tested code, before use."
     ),
     input_schema={
         "type": "object",
@@ -74,6 +75,10 @@ PROPOSE_SKILL_PLAN = ToolSpec(
                                 "inputs": {"type": "string"},
                                 "outputs": {"type": "string"},
                             },
+                        },
+                        "reads_files": {
+                            "type": "boolean",
+                            "description": "the new skill reads local files or folders",
                         },
                         "needs_network": {"type": "boolean"},
                         "has_side_effects": {"type": "boolean"},
@@ -114,6 +119,8 @@ class SkillPlan:
         for number, step in enumerate(self.steps, start=1):
             if step.new_skill is not None:
                 how = f"build new skill '{step.new_skill.name}': {step.new_skill.purpose}"
+                if step.new_skill.reads_files:
+                    how += " (reads local files; you approve each folder)"
             else:
                 how = f"reuse existing skill '{step.reuse}'"
             lines.append(f"  {number}. {step.summary} [{step.capability}] -> {how}")
@@ -228,13 +235,15 @@ def _parse_step(raw: object) -> PlanStep:
         summary=summary,
         capability=capability,
         reuse=reuse,
-        new_skill=None if new_skill is None else _parse_spec(new_skill, capability),
+        new_skill=None
+        if new_skill is None
+        else _parse_spec(new_skill, capability, reads_files=step.get("reads_files") is True),
         needs_network=step.get("needs_network") is True,
         has_side_effects=step.get("has_side_effects") is True,
     )
 
 
-def _parse_spec(raw: object, capability: str) -> SkillSpec:
+def _parse_spec(raw: object, capability: str, *, reads_files: bool) -> SkillSpec:
     if not isinstance(raw, dict):
         raise PlanError("'new_skill' must be an object")
     spec = cast("dict[str, Any]", raw)
@@ -242,4 +251,4 @@ def _parse_spec(raw: object, capability: str) -> SkillSpec:
     if not all(isinstance(value, str) and value.strip() for value in fields):
         raise PlanError("'new_skill' needs non-empty name, purpose, inputs and outputs")
     name, purpose, inputs, outputs = cast("list[str]", fields)
-    return SkillSpec(name, capability, purpose, inputs, outputs)
+    return SkillSpec(name, capability, purpose, inputs, outputs, reads_files)

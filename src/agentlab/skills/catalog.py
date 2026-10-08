@@ -105,6 +105,7 @@ def manifest_from_data(data: Mapping[str, Any], path: Path) -> SkillManifest:
         output_schema=_table_field(data, "output_schema", path),
         implementation=_str_field(data, "implementation", path),
         path=path,
+        reads_files=data.get("reads_files") is True,
     )
 
 
