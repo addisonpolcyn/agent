@@ -40,7 +40,7 @@ If a key leaks, revoke it in the Console right away and put the new one in `.env
 |---|---|
 | Ask the agent (offline) | `uv run agentlab ask --offline "What is 123 * 456?"` |
 | Ask the agent (Claude) | `uv run agentlab ask "What is 123 * 456?"` |
-| Interactive session | `uv run agentlab chat [--offline]` (each question independent; `exit` or Ctrl-D to quit) |
+| Interactive session | `uv run agentlab chat [--offline]` (the conversation is remembered; `reset` clears it, `exit` or Ctrl-D quits) |
 | List discovered and learned skills | `uv run agentlab skills` (learned ones are tagged `[learned]`) |
 | Turn off on-demand learning | `uv run agentlab ask --no-learn "..."` (also ignores learned skills) |
 | Forget a learned skill | `rm -r .agentlab/learned/<name>` |

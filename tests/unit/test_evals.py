@@ -123,7 +123,7 @@ def test_summary_groups_failures_by_mode() -> None:
 
 def test_run_case_records_llm_errors(catalog: SkillCatalog) -> None:
     case = EvalCase("c", "agent", "d", Expectations(stop_reason="answered"), task="hi")
-    result = run_case(case, lambda: Agent(ScriptedLLM([]), catalog), catalog)
+    result = run_case(case, lambda _: Agent(ScriptedLLM([]), catalog), catalog)
     assert result.error is not None
     assert result.error.startswith("LLM error")
 

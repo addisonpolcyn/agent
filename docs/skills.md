@@ -78,7 +78,7 @@ The agent loop does not change. If you find you need to change it, write down wh
 
 ## Learned skills
 
-When no skill fits and the missing piece is a pure data transformation, the agent can offer to build one. The code is in `src/agentlab/learning/`.
+When no skill fits and the missing piece is a data transformation or reading local files, the agent can offer to build one. The code is in `src/agentlab/learning/`.
 
 ```text
 propose_skill_plan ─► validate_plan ─► gate 1: "I don't have this, but I can build it. OK?"
@@ -93,7 +93,7 @@ propose_skill_plan ─► validate_plan ─► gate 1: "I don't have this, but I
 | Rule | Outcome |
 |---|---|
 | More than 5 steps, or more than 2 new skills | `refused_too_large`: split the request |
-| A *new* skill needs the network or has side effects | `refused_not_learnable`: report the gap instead. Reusing an existing trusted skill for such a step is fine. |
+| A *new* skill needs the network or has side effects (including writing files) | `refused_not_learnable`: report the gap instead. Reusing an existing trusted skill for such a step is fine. |
 | A new skill duplicates an existing name or capability, or nothing new is needed | `refused_reuse`: use what exists |
 | Unknown reused skill, non-snake_case or duplicate names, bad shape | `malformed` |
 
@@ -113,13 +113,22 @@ New skills must be generic: name them for the operation (`html_to_text`, `json_q
 
 Failed checks go back to the code writer as feedback, but the held-out inputs never do. The tests stay fixed across attempts. The harness gives up after 3 attempts, or earlier if an attempt repeats the previous failures exactly, and the agent tells the user it isn't working and why.
 
+**Reading local files.** A plan step can set `reads_files`. That skill, and only that skill, gets two read-only functions in the sandbox, never `open`:
+
+- `list_dir(path)` returns entries with `name`, `type` and `size`.
+- `read_text(path)` returns up to 1 MB of text.
+
+Relative paths mean the directory agentlab runs in. Symlinks are resolved before any check. Secret-looking files (`.env*`, `id_rsa*` and other keys, `*.pem`/`*.key`, `.ssh`, `.aws`, `.gnupg`, `credentials*` and similar) are never listed or read, even inside an approved folder. The first time a skill touches a folder that isn't approved, it stops with `needs_access`. The user is asked ("Skill 'list_files' wants to read ~/Downloads and everything under it… Allow?"), and on yes it reruns; the skill is read-only, so rerunning is safe. Approvals (`FileGrants`) cover subfolders, last for the session only, and are never saved. A refusal is remembered for the session. With nobody to ask, the answer is no.
+
+The harness tests file skills on fixture files. Each test declares `files` (relative path → text). The harness creates them in a fresh folder, substitutes that folder for `{root}` in the arguments, and makes it the only readable folder. So the user's real folders are never touched before they approve.
+
 **Sandbox** (`learning/sandbox.py`). Generated code is untrusted. It is checked against an AST allowlist: pure-data stdlib imports only (`json`, `re`, `html.parser`, …); no `open`, `eval`, `getattr` or `type`; no `_private` or dunder access except `__init__`; no `str.format`. It then runs in a separate `python -I` process with an empty environment and working directory, restricted builtins, a timeout and CPU, memory, file and process limits. There is no OS-level network block; that rests on the import allowlist. This is defense in depth, and the human review at gate 2 is part of it.
 
-**Storage.** `.agentlab/learned/<name>/` holds `skill.json` (the manifest, `implementation = "sandbox:skill.py"`), `skill.py`, `tests.json` and `report.json`. A failed or rejected build leaves only `report.json`, which is never loaded. Learned skills are reloaded on later runs. A tampered or unsafe file fails loudly at startup. To forget a skill, delete its directory.
+**Storage.** `.agentlab/learned/<name>/` holds `skill.json` (the manifest, `implementation = "sandbox:skill.py"`, plus `reads_files` when set), `skill.py`, `tests.json` and `report.json` (the verdict, every attempt's checks and the generated tests). A failed or rejected build leaves only `report.json`, which is never loaded. Learned skills are reloaded on later runs. A tampered or unsafe file fails loudly at startup. To forget a skill, delete its directory.
 
 **Within a run.** When a skill becomes ready, the loop continues in a fresh conversation that starts with the task, as if the run had started with the skill. The tool list changes at that point, and some providers (Claude's thinking blocks) bind earlier turns to the tools they were produced with, so the earlier conversation is left behind rather than edited.
 
-**Offline.** `OfflineLLM` proposes learning for one fixture capability (word counting), and `FixtureAuthorLLM` supplies a canned `word_count` contract and code, both labeled as fixtures. Offline runs and CI therefore exercise the real rules, gates, sandbox, harness and store.
+**Offline.** `OfflineLLM` proposes learning for two fixture capabilities (word counting, and listing a folder), and `FixtureAuthorLLM` supplies canned `word_count` and `list_files` contracts and code, all labeled as fixtures. Offline runs and CI therefore exercise the real rules, gates, sandbox, harness and store.
 
 ## Current limitations
 

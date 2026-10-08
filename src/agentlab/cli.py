@@ -15,7 +15,7 @@ from agentlab.config import ConfigError, Settings
 from agentlab.evals.cases import EvalCaseError, load_cases
 from agentlab.evals.runner import format_summary, run_suite
 from agentlab.flywheel.loop import record_iteration
-from agentlab.learning.approval import ConsoleApprover
+from agentlab.learning.approval import ConsoleApprover, FileGrants
 from agentlab.learning.author import LEARNED_IMPLEMENTATION, SkillAuthor
 from agentlab.learning.learner import SkillLearner, load_learned
 from agentlab.llm.claude import ClaudeClient
@@ -28,9 +28,10 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from agentlab.agent.loop import AgentRun
-    from agentlab.evals.models import EvalSummary
+    from agentlab.evals.models import EvalCase, EvalSummary
     from agentlab.learning.approval import Approver
     from agentlab.llm.client import LLMClient
+    from agentlab.models import Message
     from agentlab.skills.catalog import SkillCatalog
 
 EXIT_OK = 0
@@ -47,11 +48,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             case "skills":
                 return _skills(settings, catalog)
             case "ask" | "chat":
+                console = ConsoleApprover()
                 learned_dir = None if args.no_learn else settings.learned_dir
-                agent = _agent(settings, catalog, args.offline, learned_dir)
+                grants = FileGrants(console.confirm)
+                agent = _agent(settings, catalog, args.offline, learned_dir, grants)
                 if args.command == "ask":
-                    return _ask(agent, args.task, ConsoleApprover())
-                return _chat(agent, ConsoleApprover())
+                    return _ask(agent, args.task, console)
+                return _chat(agent, console)
             case "eval":
                 return _eval(settings, catalog, args.offline)
             case _:
@@ -70,7 +73,7 @@ def _parser() -> argparse.ArgumentParser:
     ask = commands.add_parser("ask", help="run the agent on one task")
     ask.add_argument("task")
     chat = commands.add_parser(
-        "chat", help="ask questions interactively (each is answered independently)"
+        "chat", help="ask questions interactively (the conversation is remembered)"
     )
     for command in (ask, chat):
         command.add_argument("--offline", action="store_true", help=offline_help)
@@ -86,9 +89,14 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _agent(
-    settings: Settings, catalog: SkillCatalog, offline: bool, learned_dir: Path | None
+    settings: Settings,
+    catalog: SkillCatalog,
+    offline: bool,
+    learned_dir: Path | None,
+    grants: FileGrants,
 ) -> Agent:
-    """An agent; with ``learned_dir`` it can learn skills and keeps them there."""
+    """An agent; with ``learned_dir`` it can learn skills and keeps them there. ``grants``
+    asks for, and remembers for the session, folders that learned skills may read."""
     llm: LLMClient
     author_llm: LLMClient
     if offline:
@@ -100,7 +108,8 @@ def _agent(
         author_llm = llm
     if learned_dir is None:
         return Agent(llm, catalog)
-    return Agent(llm, catalog, learner=SkillLearner(SkillAuthor(author_llm), learned_dir))
+    learner = SkillLearner(SkillAuthor(author_llm), learned_dir, grants=grants)
+    return Agent(llm, catalog, learner=learner)
 
 
 def _skills(settings: Settings, catalog: SkillCatalog) -> int:
@@ -117,8 +126,11 @@ def _ask(agent: Agent, task: str, approver: Approver) -> int:
 
 
 def _chat(agent: Agent, approver: Approver) -> int:
-    """A REPL over ``Agent.run``. The agent has no memory yet, so turns don't see each other."""
-    print("agentlab chat. Each question is answered independently. 'exit' or Ctrl-D to quit.")
+    """A REPL over ``Agent.run`` that carries the conversation from one question to the next."""
+    print(
+        "agentlab chat. The conversation is remembered; 'reset' clears it, 'exit' or Ctrl-D quits."
+    )
+    history: tuple[Message, ...] = ()
     while True:
         try:
             task = input("\n> ").strip()
@@ -127,13 +139,20 @@ def _chat(agent: Agent, approver: Approver) -> int:
             return EXIT_OK
         if task in {"exit", "quit"}:
             return EXIT_OK
+        if task == "reset":
+            history = ()
+            print("(conversation cleared)")
+            continue
         if not task:
             continue
         try:
-            _print_run(agent.run(task, approver=approver))
+            run = agent.run(task, approver=approver, history=history)
         except LLMError as exc:
             # Report and keep the session alive; one failed call shouldn't end the chat.
             print(f"error: {exc}", file=sys.stderr)
+            continue
+        history = run.messages
+        _print_run(run)
 
 
 def _print_run(run: AgentRun) -> None:
@@ -160,10 +179,12 @@ def _run_suite(settings: Settings, catalog: SkillCatalog, offline: bool) -> Eval
     cases = load_cases(settings.cases_dir)
     with tempfile.TemporaryDirectory(prefix="agentlab-eval-") as root:
 
-        def agent_for() -> Agent:
-            return _agent(settings, catalog, offline, Path(tempfile.mkdtemp(dir=root)))
+        def agent_for(case: EvalCase) -> Agent:
+            # The case's scripted human also answers folder-access questions.
+            grants = FileGrants(lambda _question: case.approval == "approve")
+            return _agent(settings, catalog, offline, Path(tempfile.mkdtemp(dir=root)), grants)
 
-        return run_suite(cases, agent_for, catalog)
+        return run_suite(cases, agent_for, catalog, offline=offline)
 
 
 def _format_trace(run: AgentRun) -> str:

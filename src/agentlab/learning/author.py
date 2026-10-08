@@ -46,7 +46,15 @@ should raise).
   Include at least one "edge" case (empty or boundary input) and at least one "error" case \
 (invalid input). Use varied inputs so a hard-coded implementation would fail.
   Only write expected outputs you are certain of. Prefer cases whose answer is unambiguous.
-The skill must be generic and reusable: it transforms data. No network, files or side effects."""
+The skill must be generic and reusable. No network, no writing, no side effects.
+
+If the skill reads files ("reads_files": true), each test also has "files": an object mapping \
+relative paths to text contents (e.g. {"notes/a.txt": "hello"}). The harness creates them in a \
+fresh folder and replaces the literal "{root}" in argument strings with that folder's path, so \
+arguments look like {"path": "{root}/notes"}. Expected outputs must not contain absolute \
+paths: use names or paths relative to the input. The skill reads through functions whose \
+errors contain these phrases, so expected errors for such cases should use them: \
+"no such file or directory", "not a directory", "not a file", "looks like a secret"."""
 
 CODE_PROMPT = f"""\
 You implement a small, generic skill as pure Python that runs in a strict sandbox.
@@ -58,6 +66,14 @@ returns a dict matching the output schema exactly.
 - Imports allowed: {", ".join(sorted(ALLOWED_MODULES))}. Nothing else.
 - Not allowed: open, eval, exec, getattr, type, dir, str.format (use f-strings), any name or \
 attribute starting with "_" (except defining or calling __init__), async, global.
+- If the skill reads files, two functions are predefined (don't import anything for them): \
+`list_dir(path)` returns a sorted list of entries, each with keys name, type ("file", \
+"dir", "symlink" or "other") and size (files only), \
+and `read_text(path)` returns a file's text (first 1 MB). Both raise \
+SkillError for missing paths or secret files, list_dir also when the path is not a folder, \
+and read_text when it is not a file; let those propagate. Only the given path and what is \
+below it are readable: never list a parent folder (for example, to check what a path is). \
+Build child paths with string operations (path + "/" + name). There is no open, os or pathlib.
 - Solve the general problem. Never special-case the example inputs.
 - Keep it compact: well under 150 lines. A small skill that handles the common cases well \
 beats a large one.
@@ -85,6 +101,10 @@ SUBMIT_CONTRACT = ToolSpec(
                         "arguments": {"type": "object"},
                         "expect_output": {"type": "object"},
                         "expect_error": {"type": "string"},
+                        "files": {
+                            "type": "object",
+                            "additionalProperties": {"type": "string"},
+                        },
                     },
                 },
             },
@@ -149,6 +169,7 @@ class SkillAuthor:
             "input_schema": contract.input_schema,
             "output_schema": contract.output_schema,
             "implementation": LEARNED_IMPLEMENTATION,
+            "reads_files": spec.reads_files,
         }
         try:
             manifest = manifest_from_data(data, manifest_path)
@@ -185,6 +206,12 @@ def _test_case(skill: str, raw: object) -> EvalCase:
     test = cast("dict[str, Any]", raw)
     name, kind, arguments = test.get("name"), test.get("kind"), test.get("arguments")
     output, error = test.get("expect_output"), test.get("expect_error")
+    files = test.get("files", {})
+    if not isinstance(files, dict) or not all(
+        isinstance(k, str) and isinstance(v, str)
+        for k, v in cast("dict[object, object]", files).items()
+    ):
+        raise AuthorError(f"test {name!r}: files must map relative paths to text")
     if not isinstance(name, str) or not name or kind not in TEST_KINDS:
         raise AuthorError(f"test {name!r}: needs a name and a kind in {TEST_KINDS}")
     if not isinstance(arguments, dict):
@@ -203,11 +230,14 @@ def _test_case(skill: str, raw: object) -> EvalCase:
         tags=(str(kind),),
         skill=skill,
         arguments=cast("JSONObject", arguments),
+        files=cast("dict[str, str]", files),
     )
 
 
 def _test_json(case: EvalCase) -> JSONObject:
     test: JSONObject = {"name": case.id, "arguments": case.arguments}
+    if case.files:
+        test["files"] = case.files
     if case.expect.output_equals is not None:
         test["expect_output"] = case.expect.output_equals
     if case.expect.error_contains is not None:

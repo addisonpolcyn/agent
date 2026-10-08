@@ -67,6 +67,8 @@ def load_case(path: Path) -> EvalCase:
         skill=data.get("skill"),
         arguments=cast("dict[str, Any]", data.get("arguments", {})),
         approval=approval,
+        earlier_turns=tuple(cast("list[str]", data.get("earlier_turns", []))),
+        model_only=bool(data.get("model_only", False)),
         expect=_expectations(expect),
         path=path,
     )

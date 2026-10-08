@@ -19,24 +19,41 @@ if TYPE_CHECKING:
 
     from agentlab.agent.loop import Agent, AgentRun
     from agentlab.evals.models import Approval, Expectations
+    from agentlab.models import Message
     from agentlab.skills.catalog import SkillCatalog
     from agentlab.skills.models import SkillResult
 
 
 def run_suite(
-    cases: Iterable[EvalCase], agent_for: Callable[[], Agent], catalog: SkillCatalog
+    cases: Iterable[EvalCase],
+    agent_for: Callable[[EvalCase], Agent],
+    catalog: SkillCatalog,
+    *,
+    offline: bool = False,
 ) -> EvalSummary:
-    """``agent_for`` builds a fresh agent (with fresh learned-skill storage) per agent case."""
-    return EvalSummary(tuple(run_case(case, agent_for, catalog) for case in cases))
+    """``agent_for`` builds a fresh agent (fresh learned skills, fresh file approvals) per case.
+
+    Offline runs skip ``model_only`` cases: a stand-in can't show what they measure.
+    """
+    return EvalSummary(
+        tuple(
+            EvalResult(case.id, case.kind, case.tags, (), skipped="needs a real model")
+            if offline and case.model_only
+            else run_case(case, agent_for, catalog)
+            for case in cases
+        )
+    )
 
 
-def run_case(case: EvalCase, agent_for: Callable[[], Agent], catalog: SkillCatalog) -> EvalResult:
+def run_case(
+    case: EvalCase, agent_for: Callable[[EvalCase], Agent], catalog: SkillCatalog
+) -> EvalResult:
     match case:
         case EvalCase(kind="skill", skill=str() as skill):
             checks = skill_checks(case.expect, catalog.execute(skill, case.arguments))
         case EvalCase(kind="agent", task=str() as task):
             try:
-                run = agent_for().run(task, approver=approver_for(case.approval))
+                run = _run_conversation(agent_for(case), case, task)
                 checks = agent_checks(case.expect, run)
             except LLMError as exc:
                 return EvalResult(case.id, case.kind, case.tags, (), error=f"LLM error: {exc}")
@@ -84,9 +101,18 @@ def agent_checks(expect: Expectations, run: AgentRun) -> list[CheckResult]:
     return checks
 
 
+def _run_conversation(agent: Agent, case: EvalCase, task: str) -> AgentRun:
+    """Earlier turns first, then the task; only the task's run is checked."""
+    approver = approver_for(case.approval)
+    history: tuple[Message, ...] = ()
+    for turn in case.earlier_turns:
+        history = agent.run(turn, approver=approver, history=history).messages
+    return agent.run(task, approver=approver, history=history)
+
+
 def approver_for(approval: Approval) -> FixedApprover:
     """The scripted human for a case. Evals never prompt anyone."""
-    return FixedApprover(plan=approval != "deny_plan", skill=approval == "approve")
+    return FixedApprover(plan=approval != "deny_plan", skill=approval in {"approve", "deny_files"})
 
 
 def skill_checks(expect: Expectations, result: SkillResult) -> list[CheckResult]:
@@ -104,14 +130,18 @@ def skill_checks(expect: Expectations, result: SkillResult) -> list[CheckResult]
 def format_summary(summary: EvalSummary) -> str:
     lines: list[str] = []
     for result in summary.results:
+        if result.skipped is not None:
+            lines.append(f"SKIP  {result.case_id}  ({result.skipped})")
+            continue
         status = "PASS" if result.passed else "FAIL"
         lines.append(f"{status}  {result.case_id}  ({result.kind}, score {result.score:.2f})")
         if result.error is not None:
             lines.append(f"      error: {result.error}")
         lines.extend(f"      {c.name}: {c.detail}" for c in result.failed_checks)
+    skipped = f", {summary.skipped_count} skipped" if summary.skipped_count else ""
     lines.append(
-        f"\n{summary.passed_count}/{len(summary.results)} cases passed "
-        f"({summary.pass_rate:.0%}), mean score {summary.mean_score:.2f}"
+        f"\n{summary.passed_count}/{len(summary.scored)} cases passed "
+        f"({summary.pass_rate:.0%}), mean score {summary.mean_score:.2f}{skipped}"
     )
     return "\n".join(lines)
 

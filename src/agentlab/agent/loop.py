@@ -17,9 +17,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from agentlab.learning.plan import PROPOSE_SKILL_PLAN
-from agentlab.models import ToolResultMessage, ToolSpec, UserMessage
+from agentlab.models import AssistantMessage, ToolResultMessage, ToolSpec, UserMessage
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from agentlab.learning.approval import Approver
     from agentlab.learning.learner import LearningOutcome, SkillLearner
     from agentlab.llm.client import LLMClient
@@ -46,13 +48,16 @@ and the user's attention, so use it only when a tool is clearly better than you:
 (long text, many records, big or nested JSON or HTML), when the same work will recur, or \
 when the user asks for a reusable capability.
 - First check whether your existing tools can do the job, alone or combined. Prefer them.
-- If they can't, and the missing piece is a pure data transformation (parsing, extracting, \
-counting, converting), call propose_skill_plan with a few small, generic steps. Reuse \
-existing tools for steps they cover. Name new skills for the general operation, not this task.
+- If they can't, and the missing piece is a data transformation (parsing, extracting, \
+counting, converting) or reading local files and folders, call propose_skill_plan with a few \
+small, generic steps. Reuse existing tools for steps they cover. Name new skills for the \
+general operation (list_files, read_text_file, html_to_text), not this task.
+- Reading local files is allowed: set reads_files on that step. The user approves each \
+folder the first time a skill touches it; if they decline, say so.
 - If the user declines or learning fails, say so. Don't present a result worked out in your \
 head as if a tool had produced it.
-- Never propose skills that need the network, files or side effects. For live or recent \
-information, call request_capability instead.
+- Never propose skills that need the network, write files or cause side effects. For live \
+or recent information, call request_capability instead.
 - After propose_skill_plan, follow its 'next' instruction and tell the user what happened: \
 the skill is ready and used, the user declined, it failed after several attempts, or the \
 plan was refused (for example, too large)."""
@@ -103,6 +108,8 @@ class AgentRun:
     invocations: tuple[ToolInvocation, ...]
     capability_gaps: tuple[CapabilityGap, ...]
     learning: tuple[LearningOutcome, ...] = ()
+    # The conversation as it ended, to pass back as ``history`` for a follow-up task.
+    messages: tuple[Message, ...] = ()
 
     @property
     def skills_used(self) -> tuple[str, ...]:
@@ -130,9 +137,19 @@ class Agent:
         self._learner = learner
         self._max_steps = max_steps
 
-    def run(self, task: str, *, approver: Approver | None = None) -> AgentRun:
-        """Solve ``task``. Without an ``approver``, every request to learn a skill is declined."""
-        messages: list[Message] = [UserMessage(task)]
+    def run(
+        self,
+        task: str,
+        *,
+        approver: Approver | None = None,
+        history: Sequence[Message] = (),
+    ) -> AgentRun:
+        """Solve ``task``, after the earlier turns in ``history`` (e.g. ``AgentRun.messages``).
+
+        Without an ``approver``, every request to learn a skill is declined.
+        """
+        earlier = _without_provider_state(history)
+        messages: list[Message] = [*earlier, UserMessage(task)]
         catalog: SkillCatalog = self._catalog
         builtins = [REQUEST_CAPABILITY]
         system = SYSTEM_PROMPT
@@ -153,6 +170,7 @@ class Agent:
                 tuple(invocations),
                 tuple(gaps),
                 tuple(learning),
+                tuple(messages),
             )
 
         for step in range(1, self._max_steps + 1):
@@ -177,7 +195,7 @@ class Agent:
                         # tools they were produced with (Claude's thinking blocks are), so
                         # editing them is not allowed. Keep every conversation append-only:
                         # continue in a fresh one, as if the run had started with the new skill.
-                        messages = [UserMessage(_after_learning(task, learning))]
+                        messages = [*earlier, UserMessage(_after_learning(task, learning))]
                         break
                     messages.append(ToolResultMessage(call.id, outcome.observation(), True))
                 else:
@@ -185,6 +203,19 @@ class Agent:
                     invocations.append(ToolInvocation(call.name, call.arguments, result))
                     messages.append(ToolResultMessage(call.id, result.as_content(), not result.ok))
         return finish(None, "max_steps", self._max_steps)
+
+
+def _without_provider_state(history: Sequence[Message]) -> list[Message]:
+    """Earlier turns as plain text and tool calls.
+
+    Providers may bind replayed state to the request it came from. Claude's thinking blocks are
+    bound to the tool list, which changes when a skill is learned. Earlier turns' answers and
+    tool results carry the context; their private reasoning is left behind, never edited.
+    """
+    return [
+        AssistantMessage(m.text, m.tool_calls) if isinstance(m, AssistantMessage) else m
+        for m in history
+    ]
 
 
 def _after_learning(task: str, learning: list[LearningOutcome]) -> str:

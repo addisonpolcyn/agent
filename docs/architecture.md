@@ -60,6 +60,8 @@ Evaluation  (src/agentlab/evals/) ──► Flywheel  (src/agentlab/flywheel/) �
 
 **Learning (`propose_skill_plan`).** With a `SkillLearner`, the loop offers a second built-in tool through which the model can propose building generic skills. The model proposes; deterministic rules, the user (twice) and the runtime harness decide. A learned skill enters the catalog as an ordinary skill whose function runs generated code in the sandbox, so the catalog boundary (`execute(name, args) -> SkillResult`) is unchanged. See [skills.md § Learned skills](skills.md#learned-skills).
 
+**Conversation history.** `Agent.run(task, history=...)` resends earlier turns before the new task (`AgentRun.messages` is the history for the next turn), because the model API is stateless. History is append-only. Provider-private state from earlier turns, such as Claude's thinking blocks, is not replayed: it is bound to the tool list, which changes when a skill is learned.
+
 **The trace is the evaluation surface (`AgentRun`).** Evals check *behavior*: which skills were used, which gaps were reported and how the run stopped. They don't just check the final string. That is what makes "did the agent recognize it needed fresh information?" testable.
 
 **Evaluation is part of the system, not an add-on.** Every behavior worth having gets an eval case. The flywheel turns eval runs into a failure summary that drives the next change. See [evaluation.md](evaluation.md).
@@ -83,10 +85,10 @@ Web content and tool results are **untrusted input**. This matters as soon as St
 - **External side effects.** Skills that act on the world (submitting forms, booking, sending) need an explicit human approval gate. The bootstrap has none, and flight research starts read-only: search, compare and recommend, with no booking.
 - **Authentication boundaries.** Skills don't share credentials with the model. Secrets stay in config (`Secret`) and are never placed in prompts or logs.
 - **Sensitive user data.** Travel preferences and personal details go only to the skills that need them.
-- **Generated code.** Learned skills are model-written code, so they are untrusted. They are restricted to pure data transformations: no network, files or side effects. They are checked against an allowlist, run in an isolated, resource-limited process, tested by the runtime harness, and shown to the user before first use. Network-capable skills stay built-in and reviewed.
+- **Generated code.** Learned skills are model-written code, so they are untrusted. They transform data and, when the plan says so, read local files through two read-only functions, only in folders the user approves and never secret-looking files. They never get the network, writes or other side effects. They are checked against an allowlist, run in an isolated, resource-limited process, tested by the runtime harness, and shown to the user before first use. Network-capable skills stay built-in and reviewed.
 
 Anthropic's browser-use guidance warns specifically that web pages can carry prompt injections, and recommends isolating sensitive data and actions and keeping approval controls. Treat it as a requirement for any browser skill.
 
 ## Deliberately absent
 
-These are absent on purpose: general planning (the only planning is the small, rule-checked skill plan), memory, recursion, and long-running autonomy; MCP; browser automation; databases and dashboards. **MCP** is a plausible future *transport* for skills: an MCP-backed skill would sit behind the same `SkillCatalog` boundary. It gets adopted once the skill boundary has proven stable, not before.
+These are absent on purpose: general planning (the only planning is the small, rule-checked skill plan), long-term memory (chat resends the current conversation and nothing persists between sessions), recursion, and long-running autonomy; MCP; browser automation; databases and dashboards. **MCP** is a plausible future *transport* for skills: an MCP-backed skill would sit behind the same `SkillCatalog` boundary. It gets adopted once the skill boundary has proven stable, not before.

@@ -22,6 +22,7 @@ class SkillSpec:
     purpose: str
     inputs: str
     outputs: str
+    reads_files: bool = False
 
     def to_json(self) -> JSONObject:
         return {
@@ -30,6 +31,7 @@ class SkillSpec:
             "purpose": self.purpose,
             "inputs": self.inputs,
             "outputs": self.outputs,
+            "reads_files": self.reads_files,
         }
 
 
@@ -105,4 +107,16 @@ class HarnessReport:
             "verdict": self.verdict,
             "reason": self.reason,
             "attempts": [report.to_json() for report in self.reports],
+            "tests": [] if self.contract is None else [_test_json(c) for c in self.contract.tests],
         }
+
+
+def _test_json(case: EvalCase) -> JSONObject:
+    return {
+        "name": case.id,
+        "kind": case.tags[0] if case.tags else "",
+        "arguments": case.arguments,
+        "files": case.files,
+        "expect_output": case.expect.output_equals,
+        "expect_error": case.expect.error_contains,
+    }

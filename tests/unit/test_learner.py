@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from agentlab.learning.approval import ConsoleApprover, FixedApprover
+from agentlab.learning.approval import ConsoleApprover, FileGrants, FixedApprover
 from agentlab.learning.author import SkillAuthor
 from agentlab.learning.learner import SkillLearner, load_learned
 from agentlab.learning.plan import parse_plan
@@ -176,3 +176,71 @@ def test_console_approver_says_no_without_a_terminal() -> None:
 
 def _plan() -> SkillPlan:
     return parse_plan(PLAN)
+
+
+LIST_PLAN: JSONObject = {
+    "goal": "List folders",
+    "steps": [
+        {
+            "summary": "List a folder",
+            "capability": "directory_listing",
+            "new_skill": {"name": "list_files", "purpose": "p", "inputs": "i", "outputs": "o"},
+            "reads_files": True,
+            "needs_network": False,
+            "has_side_effects": False,
+        }
+    ],
+}
+
+
+def file_learner(store: Path, answers: list[bool], asked: list[str]) -> SkillLearner:
+    replies = iter(answers)
+
+    def confirm(question: str) -> bool:
+        asked.append(question)
+        return next(replies)
+
+    grants = FileGrants(confirm)
+    return SkillLearner(SkillAuthor(FixtureAuthorLLM()), store, grants=grants)
+
+
+def test_file_skill_is_tested_on_fixtures_then_asks_per_folder(
+    catalog: SkillCatalog, tmp_path: Path
+) -> None:
+    data = tmp_path / "data"
+    (data / "inner").mkdir(parents=True)
+    (data / "notes.txt").write_text("x")
+    asked: list[str] = []
+    the_learner = file_learner(tmp_path / "store", [True], asked)
+    outcome, updated = the_learner.learn(LIST_PLAN, catalog, SpyApprover())
+
+    assert outcome.outcome == "ready", outcome.reason
+    assert asked == [], "testing on fixture files needs no access to the user's folders"
+    listed = updated.execute("list_files", {"path": str(data)})
+    assert listed.output == {
+        "entries": [{"name": "inner", "type": "dir"}, {"name": "notes.txt", "type": "file"}]
+    }
+    assert len(asked) == 1
+    assert str(data.resolve()) in asked[0]
+    updated.execute("list_files", {"path": str(data / "inner")})
+    assert len(asked) == 1, "an approved folder covers its subfolders for the session"
+
+
+def test_denied_folder_is_an_error_and_not_asked_again(
+    catalog: SkillCatalog, tmp_path: Path
+) -> None:
+    asked: list[str] = []
+    the_learner = file_learner(tmp_path / "store", [False], asked)
+    _, updated = the_learner.learn(LIST_PLAN, catalog, SpyApprover())
+
+    for _ in range(2):
+        result = updated.execute("list_files", {"path": str(tmp_path)})
+        assert result.error == f"the user did not allow reading {tmp_path.resolve()}"
+    assert len(asked) == 1
+
+
+def test_without_anyone_to_ask_folders_stay_closed(catalog: SkillCatalog, tmp_path: Path) -> None:
+    _, updated = learner(tmp_path / "store").learn(LIST_PLAN, catalog, SpyApprover())
+    result = updated.execute("list_files", {"path": str(tmp_path)})
+    assert result.error is not None
+    assert "did not allow" in result.error

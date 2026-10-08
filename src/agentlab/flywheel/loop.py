@@ -54,8 +54,9 @@ def render_report(summary: EvalSummary, run_name: str, comparison: Comparison | 
     lines = [
         f"# Eval iteration {run_name}",
         "",
-        f"Passed {summary.passed_count}/{len(summary.results)} cases "
-        f"({summary.pass_rate:.0%}), mean score {summary.mean_score:.2f}.",
+        f"Passed {summary.passed_count}/{len(summary.scored)} cases "
+        f"({summary.pass_rate:.0%}), mean score {summary.mean_score:.2f}"
+        f"{f', {summary.skipped_count} skipped' if summary.skipped_count else ''}.",
         "",
         "## Change since previous run",
         "",
@@ -99,7 +100,7 @@ def _compare(summary: EvalSummary, previous_dir: Path) -> Comparison:
     was_passing = {
         r["case_id"]: bool(r["passed"]) for r in cast("list[dict[str, Any]]", previous["results"])
     }
-    now_passing = {r.case_id: r.passed for r in summary.results}
+    now_passing = {r.case_id: r.passed for r in summary.scored}
     return Comparison(
         previous_run=previous_dir.name,
         previous_pass_rate=float(previous["pass_rate"]),

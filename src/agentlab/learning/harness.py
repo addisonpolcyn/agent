@@ -13,6 +13,9 @@ A candidate is *ready* only if it passes every check:
 - ``deterministic``  the same input gives the same output twice
 - ``hardcoded``      test inputs don't appear as literals in the code
 
+Skills that read files are tested against fixture files: each test gets a fresh folder with
+its files, which is the only folder the skill may read, and "{root}" in its arguments names it.
+
 The tests are fixed for every attempt, so the specification can't drift toward whatever the
 code happens to do. Retries get the failed checks as feedback, but never the held-out inputs.
 """
@@ -21,7 +24,9 @@ from __future__ import annotations
 
 import ast
 import json
-from typing import TYPE_CHECKING, Any, cast
+import tempfile
+from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from agentlab.evals.models import CheckResult
 from agentlab.evals.runner import skill_checks
@@ -32,14 +37,25 @@ from agentlab.skills.models import SkillResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
-    from pathlib import Path
 
     from agentlab.evals.models import EvalCase
     from agentlab.learning.author import SkillAuthor
     from agentlab.learning.models import SkillCandidate, SkillSpec
     from agentlab.models import JSONObject
 
-type Runner = Callable[[str, JSONObject], SandboxResult]
+
+class Runner(Protocol):
+    """How code gets executed: ``run_sandboxed``, or a fake in tests."""
+
+    def __call__(
+        self,
+        code: str,
+        arguments: JSONObject,
+        *,
+        reads_files: bool = False,
+        readable_roots: Sequence[Path] = (),
+    ) -> SandboxResult: ...
+
 
 MAX_ATTEMPTS = 3
 MAX_CONTRACT_ATTEMPTS = 2
@@ -47,6 +63,7 @@ MIN_TESTS = 6
 HOLDOUT_EVERY = 3
 DETERMINISM_SAMPLES = 3
 MIN_HARDCODED_LENGTH = 4
+ROOT_PLACEHOLDER = "{root}"
 
 # bool is a subclass of int in Python, but not a number in JSON Schema.
 _TYPE_CHECKS: dict[str, Callable[[object], bool]] = {
@@ -107,23 +124,46 @@ def evaluate_candidate(
     problems = check_source(code)
     if problems:
         return CandidateReport(attempt, (CheckResult("static", False, "; ".join(problems)),))
-    results = {case.id: run(code, case.arguments) for case in contract.tests}
-    checks = [
-        CheckResult("static", True),
-        _tests_check(contract.tests, results, holdout_ids),
-        _holdout_check(contract.tests, results, holdout_ids),
-        _crash_check(contract.tests, results, holdout_ids),
-        _output_schema_check(results, contract.output_schema),
-        _non_constant_check(contract.tests, results),
-        _determinism_check(code, contract.tests, results, run),
-        _hardcoded_check(code, contract.tests),
-    ]
+    reads_files = candidate.manifest.reads_files
+    with tempfile.TemporaryDirectory(prefix="agentlab-fixtures-") as tmp:
+        roots = {
+            case.id: _make_fixtures(Path(tmp) / str(i), case.files)
+            for i, case in enumerate(contract.tests)
+        }
+
+        def run_case(case: EvalCase) -> SandboxResult:
+            root = roots[case.id]
+            arguments = cast("JSONObject", _with_root(case.arguments, str(root)))
+            result = run(code, arguments, reads_files=reads_files, readable_roots=[root])
+            if result.needs_access is not None:
+                return SandboxResult(crash=f"read outside its test files: {result.needs_access}")
+            return result
+
+        results = {case.id: run_case(case) for case in contract.tests}
+        checks = [
+            CheckResult("static", True),
+            _tests_check(contract.tests, results, holdout_ids),
+            _holdout_check(contract.tests, results, holdout_ids),
+            _crash_check(contract.tests, results, holdout_ids),
+            _output_schema_check(results, contract.output_schema),
+            _non_constant_check(contract.tests, results),
+            _determinism_check(contract.tests, results, run_case),
+            _hardcoded_check(code, contract.tests),
+        ]
     return CandidateReport(attempt, tuple(checks))
 
 
-def contract_problems(contract: SkillContract) -> list[str]:
+def contract_problems(contract: SkillContract, *, reads_files: bool = False) -> list[str]:
     """Reasons a generated test suite is too weak or inconsistent to judge code with."""
     problems: list[str] = []
+    if reads_files and not any(case.files for case in contract.tests):
+        problems.append("a skill that reads files needs tests with fixture files")
+    problems.extend(
+        f"{case.id}: fixture path {rel!r} must be relative, without '..'"
+        for case in contract.tests
+        for rel in case.files
+        if not _safe_relative(rel)
+    )
     for key, schema in (("input", contract.input_schema), ("output", contract.output_schema)):
         if schema.get("type") != "object":
             problems.append(f"the {key} schema must have type 'object'")
@@ -132,8 +172,8 @@ def contract_problems(contract: SkillContract) -> list[str]:
         problems.append(f"needs at least {MIN_TESTS} tests, got {len(tests)}")
     if len({case.id for case in tests}) != len(tests):
         problems.append("test names must be unique")
-    if len({_canonical(case.arguments) for case in tests}) != len(tests):
-        problems.append("test arguments must be distinct")
+    if len({_canonical([case.arguments, case.files]) for case in tests}) != len(tests):
+        problems.append("tests must differ in their arguments or files")
     for kind in ("edge", "error"):
         if not any(kind in case.tags for case in tests):
             problems.append(f"needs at least one {kind!r} test")
@@ -196,7 +236,7 @@ def _write_contract(spec: SkillSpec, author: SkillAuthor) -> tuple[SkillContract
         except AuthorError as exc:
             problem, feedback = str(exc), [str(exc)]
             continue
-        problems = contract_problems(contract)
+        problems = contract_problems(contract, reads_files=spec.reads_files)
         if not problems:
             return contract, ""
         problem, feedback = "; ".join(problems), problems
@@ -285,15 +325,41 @@ def _non_constant_check(
 
 
 def _determinism_check(
-    code: str, tests: Sequence[EvalCase], results: dict[str, SandboxResult], run: Runner
+    tests: Sequence[EvalCase],
+    results: dict[str, SandboxResult],
+    run_case: Callable[[EvalCase], SandboxResult],
 ) -> CheckResult:
     unstable = [
-        case.id
-        for case in tests[:DETERMINISM_SAMPLES]
-        if run(code, case.arguments) != results[case.id]
+        case.id for case in tests[:DETERMINISM_SAMPLES] if run_case(case) != results[case.id]
     ]
     detail = f"different results on a second run: {', '.join(unstable)}"
     return CheckResult("deterministic", not unstable, detail if unstable else "")
+
+
+def _make_fixtures(root: Path, files: dict[str, str]) -> Path:
+    root.mkdir(parents=True)
+    for rel, text in files.items():
+        if not _safe_relative(rel):
+            continue  # reported by contract_problems
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return root
+
+
+def _safe_relative(rel: str) -> bool:
+    path = PurePosixPath(rel)
+    return bool(rel) and not path.is_absolute() and ".." not in path.parts and "\\" not in rel
+
+
+def _with_root(value: object, root: str) -> object:
+    if isinstance(value, str):
+        return value.replace(ROOT_PLACEHOLDER, root)
+    if isinstance(value, dict):
+        return {k: _with_root(v, root) for k, v in cast("dict[str, object]", value).items()}
+    if isinstance(value, list):
+        return [_with_root(v, root) for v in cast("list[object]", value)]
+    return value
 
 
 def _hardcoded_check(code: str, tests: Sequence[EvalCase]) -> CheckResult:
@@ -306,7 +372,7 @@ def _hardcoded_check(code: str, tests: Sequence[EvalCase]) -> CheckResult:
         s
         for case in tests
         for s in _strings(case.arguments)
-        if len(s.strip()) >= MIN_HARDCODED_LENGTH
+        if len(s.strip()) >= MIN_HARDCODED_LENGTH and ROOT_PLACEHOLDER not in s
     }
     found = sorted(literals & inputs)
     detail = "test inputs appear as literals in the code: " + ", ".join(

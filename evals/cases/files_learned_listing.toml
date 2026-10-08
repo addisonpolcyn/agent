@@ -1,0 +1,14 @@
+id = "files_learned_listing"
+kind = "agent"
+description = """\
+No skill lists folders, so the agent learns a generic file-reading skill at runtime. It is \
+tested against fixture files, the user approves the code and then the folder, and the agent \
+reports what is actually there."""
+tags = ["agent", "learning", "files"]
+task = "List the files in the evals/cases directory."
+approval = "approve"
+
+[expect]
+learning_outcome = "ready"
+answer_contains = ["flight_sfo_tokyo"]
+stop_reason = "answered"
