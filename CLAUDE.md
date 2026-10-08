@@ -1,0 +1,49 @@
+# agentlab
+
+A small, evaluation-driven agent that discovers and uses **skills** to solve tasks, and improves through an eval → failure → fix flywheel. The north star is a flight-research agent. The project is at **Stage 0 (bootstrap)**: an offline agent loop, one deterministic skill (`calculator`), capability-gap reporting, evals and the flywheel. This file is a **map**: the substance lives in the linked docs.
+
+## Commands
+
+```bash
+uv sync                                              # set up
+set -a; source .env; set +a                          # load ANTHROPIC_API_KEY (Claude runs only)
+uv run agentlab ask --offline "What is 123 * 456?"   # run the agent (drop --offline to use Claude)
+uv run agentlab chat --offline                       # interactive: ask questions until 'exit'
+uv run agentlab eval --offline                       # eval gate (non-zero exit on failure)
+uv run agentlab flywheel --offline                   # record an iteration + failure summary in runs/
+uv run pytest && scripts/lint.sh                     # tests, format, lint, pyright strict
+```
+
+## Docs
+
+| Doc | Read it when… |
+|---|---|
+| [docs/style-guide.md](docs/style-guide.md) | **Before writing any code.** Methodologies and the reasons behind them. |
+| [docs/architecture.md](docs/architecture.md) | You need the system flow, the reason for each boundary, or the security principles. |
+| [docs/skills.md](docs/skills.md) | You are adding or changing a skill, or touching discovery. |
+| [docs/evaluation.md](docs/evaluation.md) | You are writing eval cases, adding checks, or reading flywheel output. |
+| [docs/development.md](docs/development.md) | You need setup, the API key and `.env`, commands, the test tiers, CI or tooling notes. |
+| [docs/roadmap.md](docs/roadmap.md) | You are deciding what to build next, or checking that a change serves the north star. |
+
+## Code
+
+| Path | What's there |
+|---|---|
+| [src/agentlab/agent/loop.py](src/agentlab/agent/loop.py) | The agent loop, `request_capability`, `AgentRun` trace. Start here. |
+| [src/agentlab/models.py](src/agentlab/models.py) | Provider-neutral boundary types (`ToolSpec`, `ToolCall`, messages). |
+| [src/agentlab/llm/](src/agentlab/llm/) | `LLMClient` protocol, `ClaudeClient` (only SDK importer), `ScriptedLLM` / `OfflineLLM` fakes. |
+| [src/agentlab/skills/catalog.py](src/agentlab/skills/catalog.py) | Skill discovery and execution. |
+| [skills/](skills/) | Skill manifests (`*/skill.toml`). |
+| [src/agentlab/evals/](src/agentlab/evals/) | Case loading, checks, runner. |
+| [evals/cases/](evals/cases/) | Eval cases (TOML), including the `flight_sfo_tokyo` north-star fixture. |
+| [src/agentlab/flywheel/loop.py](src/agentlab/flywheel/loop.py) | Records runs and diffs them against the previous one. |
+| [src/agentlab/cli.py](src/agentlab/cli.py) | CLI wiring; settings are read here only. |
+| [tests/](tests/) | `unit/`, `integration/`, `external/` (opt-in live). |
+
+## Non-negotiables (details in the style guide)
+
+- Every behavior change ships with an eval case. Never weaken a check to make it pass.
+- Never route on task text. The model selects skills from their manifests.
+- Only `llm/claude.py` imports `anthropic`. The loop never knows how skills work.
+- Everything in CI runs offline. Fakes are labeled as fakes, and fabricated data is never presented as real.
+- When documented behavior changes, update the doc and this map in the same change.

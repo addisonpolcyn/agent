@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # No secrets and no network beyond dependency installation: everything here runs offline.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Lint
+        run: uv run ruff check .
+      - name: Type check
+        run: uv run pyright
+      - name: Tests (unit + offline integration)
+        run: uv run pytest
+      - name: Offline evaluation
+        run: uv run agentlab eval --offline
+      - name: Offline flywheel
+        run: uv run agentlab flywheel --offline

@@ -1,0 +1,9 @@
+id = "calculator_component"
+kind = "skill"
+description = "Component check: the calculator skill computes products exactly."
+tags = ["component", "calculator"]
+skill = "calculator"
+arguments = { expression = "120 * 3" }
+
+[expect]
+output_equals = { result = 360 }

@@ -1,0 +1,22 @@
+name = "calculator"
+description = "Evaluates an arithmetic expression exactly and returns the numeric result."
+when_to_use = "The task requires computing a numeric answer from arithmetic: + - * / // % ** and parentheses."
+limitations = "Numbers and operators only. No variables, functions, units, or dates. Exponents are capped at 100."
+capabilities = ["arithmetic"]
+implementation = "agentlab.skills.builtin.calculator:run"
+
+[input_schema]
+type = "object"
+required = ["expression"]
+additionalProperties = false
+
+[input_schema.properties.expression]
+type = "string"
+description = "An arithmetic expression, e.g. \"120 * 3\"."
+
+[output_schema]
+type = "object"
+required = ["result"]
+
+[output_schema.properties.result]
+type = "number"

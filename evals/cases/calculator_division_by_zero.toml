@@ -1,0 +1,9 @@
+id = "calculator_division_by_zero"
+kind = "skill"
+description = "Component check: invalid arithmetic is a reported error, not a crash."
+tags = ["component", "calculator"]
+skill = "calculator"
+arguments = { expression = "1 / 0" }
+
+[expect]
+error_contains = "division by zero"
