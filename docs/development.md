@@ -22,19 +22,15 @@ Everything with `--offline`, and the whole test suite, works without a key. To u
    ```
 
    `.env` is git-ignored. Never commit it, and never paste a key into chats, issues or logs.
-3. **Load it into your shell.** agentlab reads environment variables, not the `.env` file itself. Do this once per terminal:
-
-   ```bash
-   set -a; source .env; set +a
-   ```
-
-4. **Run without `--offline`:**
+3. **Run without `--offline`.** agentlab and the live tests read `.env` from the current directory automatically, so run from the repo root:
 
    ```bash
    uv run agentlab chat
    uv run agentlab flywheel
-   AGENTLAB_LIVE_TESTS=1 uv run pytest -m live
+   uv run pytest -m live
    ```
+
+   A variable set in your shell overrides the same key in `.env`, e.g. `AGENTLAB_MODEL=claude-haiku-5-5 uv run agentlab chat`.
 
 If a key leaks, revoke it in the Console right away and put the new one in `.env`. The other settings in `.env.example` (`AGENTLAB_MODEL` and the directory overrides) are optional. Each live eval run costs a few cents with the default `claude-opus-5-5`.
 
@@ -49,7 +45,7 @@ If a key leaks, revoke it in the Console right away and put the new one in `.env
 | Run evals (gate) | `uv run agentlab eval --offline` |
 | Run a flywheel iteration | `uv run agentlab flywheel --offline` |
 | Tests | `uv run pytest` (or `scripts/test.sh`) |
-| Live Claude tests | `AGENTLAB_LIVE_TESTS=1 uv run pytest -m live` |
+| Live Claude tests | `uv run pytest -m live` (needs a key in `.env` or the environment) |
 | Format, lint, types | `scripts/lint.sh` (ruff format --check, ruff check, pyright) |
 | All pre-commit hooks | `uv run pre-commit run --all-files` |
 | Eval and record iteration | `scripts/eval.sh` (offline) / `scripts/eval.sh --live` |
@@ -70,9 +66,9 @@ For anything that touches model behavior (prompts, tool descriptions, skill sele
 |---|---|---|
 | `tests/unit/` | Calculator, catalog, agent state transitions (`ScriptedLLM`), fakes, evals, flywheel, config, Claude mappings | Yes |
 | `tests/integration/` | Full offline loop with `OfflineLLM` and the real catalog and cases; CLI via `main(argv)` | Yes |
-| `tests/external/` | Real Claude API (`@pytest.mark.live`) | No: opt-in |
+| `tests/external/` | Real Claude API (`@pytest.mark.live`) | Yes, in the separate `live-claude` job |
 
-`pytest` deselects `live` tests by default (`-m "not live"` in `pyproject.toml`). The live tests also skip themselves unless `AGENTLAB_LIVE_TESTS=1` and a key are set.
+A plain `pytest` deselects `live` tests (`-m "not live"` in `pyproject.toml`), so the everyday run stays offline and free. `pytest -m live` opts in. Live tests skip themselves when no key is configured, and CI checks for the key separately so a missing secret fails instead of skipping. Integration tests run from an empty temporary directory, so your real `.env` never leaks into them.
 
 ## Git workflow
 
@@ -97,13 +93,22 @@ Why it works this way:
 
 - **Small branches, one logical change each.** Squash merging turns each PR into one commit on `main`, so `main`'s history reads as a list of changes. The PR title becomes that commit's message.
 - **Push and open a PR early.** CI runs on every push, so problems show up while they're cheap to fix. The draft state shows the work isn't finished.
-- **CI is the merge gate, not memory.** Offline CI is deterministic, so a green check means the change is safe to land. Live Claude evals vary from run to run, so they stay advisory: run `agentlab flywheel` locally. See [evaluation.md](evaluation.md).
+- **CI is the merge gate, not memory.** Both CI jobs must pass: `check` (offline, deterministic) and `live-claude` (real Claude). Model output varies, so if `live-claude` fails, read the failure first. If it's a phrasing flake rather than a real regression, re-run it (`gh run rerun --failed`) and consider making the eval check more robust.
 
-One-time setup: `gh auth login`. Branch protection on `main` requires a pull request and a passing `check` job, allows squash merges only, enables auto-merge, and deletes branches after merge.
+One-time setup: `gh auth login`. Branch protection on `main` requires a pull request with passing `check` and `live-claude` jobs, allows squash merges only, enables auto-merge, and deletes branches after merge.
 
 ## CI
 
-`.github/workflows/ci.yml` runs, in order: `uv sync --locked`, the format check, lint, pyright, pytest, `eval --offline` and `flywheel --offline`. It uses no secrets and no network beyond installing dependencies.
+`.github/workflows/ci.yml` has two jobs, and both are required to merge:
+
+| Job | Runs | Needs |
+|---|---|---|
+| `check` | `uv sync --locked`, format check, lint, pyright, pytest, `eval --offline`, `flywheel --offline` | Nothing: offline and deterministic |
+| `live-claude` | `pytest -m live` and `agentlab eval` against real Claude, only after `check` passes | The `ANTHROPIC_API_KEY` repository secret |
+
+**Setting up the secret.** Use a separate key just for CI, with a monthly spend limit set in the Console. Add it under GitHub **Settings → Secrets and variables → Actions → New repository secret**, named `ANTHROPIC_API_KEY`, or run `gh secret set ANTHROPIC_API_KEY`. Each `live-claude` run costs a few cents.
+
+**Forks.** GitHub never gives secrets to pull requests from forks, so `live-claude` is skipped for them. Never switch the trigger to `pull_request_target` to work around this: that would expose the key to untrusted code.
 
 ## Tooling notes
 

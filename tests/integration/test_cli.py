@@ -17,7 +17,10 @@ if TYPE_CHECKING:
 
 @pytest.fixture(autouse=True)
 def repo_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, repo_root: Path) -> None:
-    monkeypatch.chdir(repo_root)
+    # Run from an empty directory so a developer's real .env can never leak into tests.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENTLAB_SKILLS_DIR", str(repo_root / "skills"))
+    monkeypatch.setenv("AGENTLAB_CASES_DIR", str(repo_root / "evals" / "cases"))
     monkeypatch.setenv("AGENTLAB_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
@@ -95,3 +98,21 @@ def test_chat_keeps_going_after_an_llm_error(
     assert main(["chat", "--offline"]) == EXIT_OK
     assert calls == ["first", "second"]
     assert capsys.readouterr().err.count("error: service unavailable") == 2
+
+
+def test_reads_settings_from_dotenv_in_working_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    repo_root: Path,
+) -> None:
+    monkeypatch.delenv("AGENTLAB_SKILLS_DIR")
+    (tmp_path / ".env").write_text(f"AGENTLAB_SKILLS_DIR={repo_root / 'skills'}\n")
+    assert main(["skills"]) == EXIT_OK
+    assert "calculator" in capsys.readouterr().out
+
+
+def test_malformed_dotenv_is_reported(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    (tmp_path / ".env").write_text("this is not a setting\n")
+    assert main(["skills"]) == EXIT_ERROR
+    assert ".env:1: expected KEY=VALUE" in capsys.readouterr().err

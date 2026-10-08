@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from agentlab.agent.loop import Agent
-from agentlab.config import Settings
+from agentlab.config import ConfigError, Settings
 from agentlab.evals.cases import EvalCaseError, load_cases
 from agentlab.evals.runner import format_summary, run_suite
 from agentlab.flywheel.loop import record_iteration
@@ -34,8 +33,8 @@ EXIT_ERROR = 2
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    settings = Settings.from_env(os.environ)
     try:
+        settings = Settings.load()
         catalog = discover_catalog(settings.skills_dir)
         match args.command:
             case "skills":
@@ -48,7 +47,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return _eval(settings, catalog, _agent(settings, catalog, args.offline))
             case _:
                 return _flywheel(settings, catalog, _agent(settings, catalog, args.offline))
-    except (LLMError, SkillManifestError, EvalCaseError) as exc:
+    except (ConfigError, LLMError, SkillManifestError, EvalCaseError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
