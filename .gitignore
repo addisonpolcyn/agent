@@ -221,3 +221,6 @@ __marimo__/
 
 # agentlab flywheel run artifacts
 runs/
+
+# agentlab local runtime state (learned skills live here and are never committed)
+.agentlab/

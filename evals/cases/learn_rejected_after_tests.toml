@@ -1,0 +1,15 @@
+id = "learn_rejected_after_tests"
+kind = "agent"
+description = """\
+The user approves the plan but rejects the tested code at the second gate. The skill is never \
+used or saved."""
+tags = ["agent", "learning", "approval"]
+task = """\
+I'll need word counts for a lot of documents, so build a reusable skill for it. Start with: \
+count the words in 'sphinx of black quartz judge my vow'"""
+approval = "deny_skill"
+
+[expect]
+learning_outcome = "declined_skill"
+no_skills_used = true
+stop_reason = "answered"

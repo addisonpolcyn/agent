@@ -1,0 +1,15 @@
+id = "learn_declined_by_user"
+kind = "agent"
+description = """\
+The user says no at the first gate. Nothing is built or used, and the agent says what it can't \
+do instead of acting anyway."""
+tags = ["agent", "learning", "approval"]
+task = """\
+I'll need word counts for a lot of documents, so build a reusable skill for it. Start with: \
+count the words in 'pack my box with five dozen liquor jugs'"""
+approval = "deny_plan"
+
+[expect]
+learning_outcome = "declined_plan"
+no_skills_used = true
+stop_reason = "answered"

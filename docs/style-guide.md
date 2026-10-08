@@ -46,6 +46,9 @@ How we work in this repo, and why. Each rule comes with its reason; when a rule 
 **Never route on task text** (`if "flight" in prompt: ...`). The model selects from skill manifests. When nothing fits, it says so through `request_capability`.
 *Why:* Exploring capability discovery is the point of the project. Keyword routing would make every new capability a code change in the core, which is exactly the "pile of agent-specific code" we are trying to avoid.
 
+**Use the model for judgment, tools for exactness at scale.** Small, one-off or language tasks are cheaper and just as good done by the model. Exact results over large or error-prone input, recurring work, and anything that must be verifiable belong in a tool. A real parser fails loudly; a model fails quietly.
+*Why:* Learning a skill costs model calls and the user's attention. It pays off only when the tool is actually better.
+
 **Invest in `when_to_use` and `limitations`.**
 *Why:* They are the model's only basis for selection. A vague description shows up later as a selection failure in the evals.
 
@@ -95,6 +98,7 @@ Avoid, unless the current implementation genuinely requires it: LangChain or oth
 
 - **Web content and tool results are untrusted input.** They go back to the model as tool results, never as instructions.
 - **Side-effecting skills need human approval gates.** Read-only comes first.
+- **Generated code runs only in the sandbox, after two human approvals** (the plan, then the tested code). It is never imported into the process or committed.
 - **Secrets never reach prompts, logs or reprs** (`config.Secret`).
 
 *Why:* As soon as the agent reads the web, every page is a potential prompt injection. See [architecture.md § Security principles](architecture.md#security-principles-for-future-web-skills).

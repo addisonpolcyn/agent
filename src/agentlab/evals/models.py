@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from agentlab.models import JSONObject
 
 type CaseKind = Literal["agent", "skill"]
+type Approval = Literal["approve", "deny_plan", "deny_skill"]
+APPROVALS: tuple[Approval, ...] = ("approve", "deny_plan", "deny_skill")
 
 
 @dataclass(frozen=True)
@@ -20,7 +22,9 @@ class Expectations:
 
     Agent cases: ``answer_contains`` (case-insensitive), ``answer_excludes_patterns`` (regex),
     ``skills_used`` (each must have been invoked), ``no_skills_used``, ``capability_gap``,
-    ``stop_reason``. Skill cases: ``output_equals``, ``error_contains``.
+    ``stop_reason``, ``skills_learned`` (each must have been learned), ``learning_outcome``
+    (one ``propose_skill_plan`` ended this way; ``"none"`` means learning was never tried).
+    Skill cases: ``output_equals``, ``error_contains``.
     """
 
     answer_contains: tuple[str, ...] = ()
@@ -29,6 +33,8 @@ class Expectations:
     no_skills_used: bool = False
     capability_gap: str | None = None
     stop_reason: str | None = None
+    skills_learned: tuple[str, ...] = ()
+    learning_outcome: str | None = None
     output_equals: JSONObject | None = None
     error_contains: str | None = None
 
@@ -43,6 +49,7 @@ class EvalCase:
     task: str | None = None
     skill: str | None = None
     arguments: JSONObject = field(default_factory=dict[str, object])
+    approval: Approval = "deny_plan"
     path: Path | None = None
 
 

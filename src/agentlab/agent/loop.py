@@ -4,8 +4,11 @@
 
 The loop knows nothing about individual skills. It offers the catalog as tools, plus one
 built-in tool, ``request_capability``, which the model uses to say "none of these skills can
-do what this task needs". That gap is recorded in the trace (so evals can check it) and is the
-hook where future versions will search for and load a matching skill.
+do what this task needs". That gap is recorded in the trace, so evals can check it.
+
+With a ``SkillLearner``, the loop also offers ``propose_skill_plan``: the model can propose
+building generic new skills, and the learner validates, asks the user, builds and evaluates
+them (see ``agentlab.learning``). Skills learned during a run become tools on the next step.
 """
 
 from __future__ import annotations
@@ -13,9 +16,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from agentlab.learning.plan import PROPOSE_SKILL_PLAN
 from agentlab.models import ToolResultMessage, ToolSpec, UserMessage
 
 if TYPE_CHECKING:
+    from agentlab.learning.approval import Approver
+    from agentlab.learning.learner import LearningOutcome, SkillLearner
     from agentlab.llm.client import LLMClient
     from agentlab.models import JSONObject, Message, ToolCall
     from agentlab.skills.catalog import SkillCatalog
@@ -29,6 +35,27 @@ You are a careful assistant that solves tasks using the tools available to you.
 from the web), call request_capability to name it, then tell the user what you cannot do.
 - Never invent facts, prices, schedules, or links. Say what you don't know.
 - If no tool is needed, answer directly."""
+
+LEARNING_PROMPT = """
+
+You can also learn new skills, with the user's permission. Learning costs time, model calls \
+and the user's attention, so use it only when a tool is clearly better than you:
+- Do it yourself when the task is small, one-off, or a matter of judgment or language \
+(summarizing, classifying, a short text, a few values).
+- A tool is better when the result must be exact and the input is large or error-prone \
+(long text, many records, big or nested JSON or HTML), when the same work will recur, or \
+when the user asks for a reusable capability.
+- First check whether your existing tools can do the job, alone or combined. Prefer them.
+- If they can't, and the missing piece is a pure data transformation (parsing, extracting, \
+counting, converting), call propose_skill_plan with a few small, generic steps. Reuse \
+existing tools for steps they cover. Name new skills for the general operation, not this task.
+- If the user declines or learning fails, say so. Don't present a result worked out in your \
+head as if a tool had produced it.
+- Never propose skills that need the network, files or side effects. For live or recent \
+information, call request_capability instead.
+- After propose_skill_plan, follow its 'next' instruction and tell the user what happened: \
+the skill is ready and used, the user declined, it failed after several attempts, or the \
+plan was refused (for example, too large)."""
 
 REQUEST_CAPABILITY = ToolSpec(
     name="request_capability",
@@ -75,31 +102,62 @@ class AgentRun:
     steps: int
     invocations: tuple[ToolInvocation, ...]
     capability_gaps: tuple[CapabilityGap, ...]
+    learning: tuple[LearningOutcome, ...] = ()
 
     @property
     def skills_used(self) -> tuple[str, ...]:
         return tuple(invocation.name for invocation in self.invocations)
 
+    @property
+    def skills_learned(self) -> tuple[str, ...]:
+        return tuple(name for outcome in self.learning for name in outcome.learned)
+
 
 class Agent:
-    def __init__(self, llm: LLMClient, catalog: SkillCatalog, *, max_steps: int = 5) -> None:
-        if REQUEST_CAPABILITY.name in catalog:
-            raise ValueError(f"skill name {REQUEST_CAPABILITY.name!r} is reserved")
+    def __init__(
+        self,
+        llm: LLMClient,
+        catalog: SkillCatalog,
+        *,
+        learner: SkillLearner | None = None,
+        max_steps: int = 8,
+    ) -> None:
+        for reserved in (REQUEST_CAPABILITY.name, PROPOSE_SKILL_PLAN.name):
+            if reserved in catalog:
+                raise ValueError(f"skill name {reserved!r} is reserved")
         self._llm = llm
         self._catalog = catalog
+        self._learner = learner
         self._max_steps = max_steps
 
-    def run(self, task: str) -> AgentRun:
+    def run(self, task: str, *, approver: Approver | None = None) -> AgentRun:
+        """Solve ``task``. Without an ``approver``, every request to learn a skill is declined."""
         messages: list[Message] = [UserMessage(task)]
-        tools = [*self._catalog.tool_specs(), REQUEST_CAPABILITY]
+        catalog: SkillCatalog = self._catalog
+        builtins = [REQUEST_CAPABILITY]
+        system = SYSTEM_PROMPT
+        if self._learner is not None:
+            catalog = catalog.with_skills(self._learner.load_learned())
+            builtins.append(PROPOSE_SKILL_PLAN)
+            system += LEARNING_PROMPT
         invocations: list[ToolInvocation] = []
         gaps: list[CapabilityGap] = []
+        learning: list[LearningOutcome] = []
 
         def finish(answer: str | None, stop_reason: StopReason, steps: int) -> AgentRun:
-            return AgentRun(task, answer, stop_reason, steps, tuple(invocations), tuple(gaps))
+            return AgentRun(
+                task,
+                answer,
+                stop_reason,
+                steps,
+                tuple(invocations),
+                tuple(gaps),
+                tuple(learning),
+            )
 
         for step in range(1, self._max_steps + 1):
-            response = self._llm.generate(system=SYSTEM_PROMPT, messages=messages, tools=tools)
+            tools = [*catalog.tool_specs(), *builtins]
+            response = self._llm.generate(system=system, messages=messages, tools=tools)
             messages.append(response.as_message())
             if not response.tool_calls:
                 return finish(response.text, "answered", step)
@@ -108,11 +166,34 @@ class Agent:
                     gap = _capability_gap(call)
                     gaps.append(gap)
                     messages.append(_gap_observation(call, gap))
+                elif call.name == PROPOSE_SKILL_PLAN.name and self._learner is not None:
+                    learned: tuple[LearningOutcome, SkillCatalog] = self._learner.learn(
+                        call.arguments, catalog, approver
+                    )
+                    outcome, catalog = learned
+                    learning.append(outcome)
+                    if outcome.ok:
+                        # The tool list just changed. Providers may bind earlier turns to the
+                        # tools they were produced with (Claude's thinking blocks are), so
+                        # editing them is not allowed. Keep every conversation append-only:
+                        # continue in a fresh one, as if the run had started with the new skill.
+                        messages = [UserMessage(_after_learning(task, learning))]
+                        break
+                    messages.append(ToolResultMessage(call.id, outcome.observation(), True))
                 else:
-                    result = self._catalog.execute(call.name, call.arguments)
+                    result = catalog.execute(call.name, call.arguments)
                     invocations.append(ToolInvocation(call.name, call.arguments, result))
                     messages.append(ToolResultMessage(call.id, result.as_content(), not result.ok))
         return finish(None, "max_steps", self._max_steps)
+
+
+def _after_learning(task: str, learning: list[LearningOutcome]) -> str:
+    """The task again, plus what was just learned, so the answer can say so."""
+    learned = ", ".join(name for outcome in learning for name in outcome.learned)
+    return (
+        f"{task}\n\n[agentlab] With the user's approval, you just learned and tested these "
+        f"skills for this task: {learned}. Use them, and mention that they are newly learned."
+    )
 
 
 def _capability_gap(call: ToolCall) -> CapabilityGap:

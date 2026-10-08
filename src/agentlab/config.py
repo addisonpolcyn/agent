@@ -38,6 +38,7 @@ class Settings:
     skills_dir: Path = Path("skills")
     cases_dir: Path = Path("evals/cases")
     runs_dir: Path = Path("runs")
+    learned_dir: Path = Path(".agentlab/learned")
     anthropic_api_key: Secret | None = None
 
     @classmethod
@@ -54,6 +55,7 @@ class Settings:
             skills_dir=Path(env.get("AGENTLAB_SKILLS_DIR") or defaults.skills_dir),
             cases_dir=Path(env.get("AGENTLAB_CASES_DIR") or defaults.cases_dir),
             runs_dir=Path(env.get("AGENTLAB_RUNS_DIR") or defaults.runs_dir),
+            learned_dir=Path(env.get("AGENTLAB_LEARNED_DIR") or defaults.learned_dir),
             anthropic_api_key=Secret(key) if key else None,
         )
 
