@@ -78,6 +78,11 @@ def load_manifest(path: Path) -> SkillManifest:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise SkillManifestError(f"{path}: invalid TOML: {exc}") from exc
+    return manifest_from_data(data, path)
+
+
+def manifest_from_data(data: Mapping[str, Any], path: Path) -> SkillManifest:
+    """Validate manifest fields. Shared by ``skill.toml`` discovery and learned skills."""
     return SkillManifest(
         name=_str_field(data, "name", path),
         description=_str_field(data, "description", path),
