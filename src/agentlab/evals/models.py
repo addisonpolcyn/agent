@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
     from agentlab.models import JSONObject
 
-type CaseKind = Literal["agent", "skill"]
+type CaseKind = Literal["agent", "tool"]
 type Approval = Literal["approve", "deny_plan"]
 APPROVALS: tuple[Approval, ...] = ("approve", "deny_plan")
 
@@ -21,19 +21,19 @@ class Expectations:
     """Checks a case can declare. Unset fields are not checked.
 
     Agent cases: ``answer_contains`` (case-insensitive), ``answer_excludes_patterns`` (regex),
-    ``skills_used`` (each must have been invoked), ``no_skills_used``, ``capability_gap``,
-    ``stop_reason``, ``skills_learned`` (each must have been learned), ``learning_outcome``
-    (one ``propose_skill_plan`` ended this way; ``"none"`` means learning was never tried).
-    Skill cases: ``output_equals``, ``error_contains``.
+    ``tools_used`` (each must have been invoked), ``no_tools_used``, ``capability_gap``,
+    ``stop_reason``, ``tools_learned`` (each must have been learned), ``learning_outcome``
+    (one ``propose_tool_plan`` ended this way; ``"none"`` means learning was never tried).
+    Tool cases: ``output_equals``, ``error_contains``.
     """
 
     answer_contains: tuple[str, ...] = ()
     answer_excludes_patterns: tuple[str, ...] = ()
-    skills_used: tuple[str, ...] = ()
-    no_skills_used: bool = False
+    tools_used: tuple[str, ...] = ()
+    no_tools_used: bool = False
     capability_gap: str | None = None
     stop_reason: str | None = None
-    skills_learned: tuple[str, ...] = ()
+    tools_learned: tuple[str, ...] = ()
     learning_outcome: str | None = None
     output_equals: JSONObject | None = None
     error_contains: str | None = None
@@ -47,9 +47,9 @@ class EvalCase:
     expect: Expectations
     tags: tuple[str, ...] = ()
     task: str | None = None
-    skill: str | None = None
+    tool: str | None = None
     arguments: JSONObject = field(default_factory=dict[str, object])
-    # Skill cases for file-reading skills: relative path -> text, created in a fresh folder
+    # Tool cases for file-reading tools: relative path -> text, created in a fresh folder
     # whose path replaces "{root}" in the arguments.
     files: dict[str, str] = field(default_factory=dict[str, str])
     approval: Approval = "deny_plan"

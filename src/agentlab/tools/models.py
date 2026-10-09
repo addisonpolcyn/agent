@@ -1,4 +1,4 @@
-"""Skill metadata and results."""
+"""Tool metadata and results."""
 
 from __future__ import annotations
 
@@ -11,17 +11,17 @@ if TYPE_CHECKING:
     from agentlab.models import JSONObject
 
 
-class SkillError(Exception):
-    """A skill rejected its input or could not produce a result. Reported back to the model."""
+class ToolError(Exception):
+    """A tool rejected its input or could not produce a result. Reported back to the model."""
 
 
-class SkillManifestError(Exception):
-    """A skill manifest is malformed or points at an implementation that cannot be loaded."""
+class ToolManifestError(Exception):
+    """A tool manifest is malformed or points at an implementation that cannot be loaded."""
 
 
 @dataclass(frozen=True)
-class SkillManifest:
-    """Everything the agent may know about a skill, read from its ``skill.toml``."""
+class ToolManifest:
+    """Everything the agent may know about a tool, read from its ``tool.toml``."""
 
     name: str
     description: str
@@ -32,13 +32,13 @@ class SkillManifest:
     output_schema: JSONObject
     implementation: str
     path: Path
-    # Learned skills only: may read user-approved local folders through the sandbox.
+    # Learned tools only: may read user-approved local folders through the sandbox.
     reads_files: bool = False
 
 
 @dataclass(frozen=True)
-class SkillResult:
-    """Outcome of one skill execution. Exactly one of ``output`` / ``error`` is set."""
+class ToolResult:
+    """Outcome of one tool execution. Exactly one of ``output`` / ``error`` is set."""
 
     output: JSONObject | None = None
     error: str | None = None

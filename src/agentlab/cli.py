@@ -1,4 +1,4 @@
-"""Command-line entry point: ``agentlab ask | chat | eval | flywheel | skills``."""
+"""Command-line entry point: ``agentlab ask | chat | eval | flywheel | tools``."""
 
 from __future__ import annotations
 
@@ -16,13 +16,13 @@ from agentlab.evals.cases import EvalCaseError, load_cases
 from agentlab.evals.runner import format_summary, run_suite
 from agentlab.flywheel.loop import record_iteration
 from agentlab.learning.approval import ConsoleApprover
-from agentlab.learning.author import LEARNED_IMPLEMENTATION, SkillAuthor
-from agentlab.learning.learner import SkillLearner, load_learned
+from agentlab.learning.author import LEARNED_IMPLEMENTATION, ToolAuthor
+from agentlab.learning.learner import ToolLearner, load_learned
 from agentlab.llm.claude import ClaudeClient
 from agentlab.llm.client import LLMError
 from agentlab.llm.fake import FixtureAuthorLLM, OfflineLLM
-from agentlab.skills.catalog import discover_catalog
-from agentlab.skills.models import SkillManifestError
+from agentlab.tools.catalog import discover_catalog
+from agentlab.tools.models import ToolManifestError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from agentlab.learning.approval import Approver
     from agentlab.llm.client import LLMClient
     from agentlab.models import Message
-    from agentlab.skills.catalog import SkillCatalog
+    from agentlab.tools.catalog import ToolCatalog
 
 EXIT_OK = 0
 EXIT_EVAL_FAILED = 1
@@ -43,10 +43,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         settings = Settings.load()
-        catalog = discover_catalog(settings.skills_dir)
+        catalog = discover_catalog(settings.tools_dir)
         match args.command:
-            case "skills":
-                return _skills(settings, catalog)
+            case "tools":
+                return _tools(settings, catalog)
             case "ask" | "chat":
                 console = ConsoleApprover()
                 learned_dir = None if args.no_learn else settings.learned_dir
@@ -58,7 +58,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return _eval(settings, catalog, args.offline)
             case _:
                 return _flywheel(settings, catalog, args.offline)
-    except (ConfigError, LLMError, SkillManifestError, EvalCaseError) as exc:
+    except (ConfigError, LLMError, ToolManifestError, EvalCaseError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
@@ -67,7 +67,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agentlab", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     offline_help = "use the deterministic offline stand-in instead of Claude (no network)"
-    no_learn_help = "use only the repo's skills: no learning, and learned skills are ignored"
+    no_learn_help = "use only the repo's tools: no learning, and learned tools are ignored"
 
     ask = commands.add_parser("ask", help="run the agent on one task")
     ask.add_argument("task")
@@ -83,17 +83,17 @@ def _parser() -> argparse.ArgumentParser:
     ]:
         command = commands.add_parser(name, help=help_text)
         command.add_argument("--offline", action="store_true", help=offline_help)
-    commands.add_parser("skills", help="list discovered and learned skills")
+    commands.add_parser("tools", help="list discovered and learned tools")
     return parser
 
 
 def _agent(
     settings: Settings,
-    catalog: SkillCatalog,
+    catalog: ToolCatalog,
     offline: bool,
     learned_dir: Path | None,
 ) -> Agent:
-    """An agent; with ``learned_dir`` it can learn skills and keeps them there."""
+    """An agent; with ``learned_dir`` it can learn tools and keeps them there."""
     llm: LLMClient
     author_llm: LLMClient
     if offline:
@@ -105,12 +105,12 @@ def _agent(
         author_llm = llm
     if learned_dir is None:
         return Agent(llm, catalog)
-    learner = SkillLearner(SkillAuthor(author_llm), learned_dir)
+    learner = ToolLearner(ToolAuthor(author_llm), learned_dir)
     return Agent(llm, catalog, learner=learner)
 
 
-def _skills(settings: Settings, catalog: SkillCatalog) -> int:
-    for manifest in catalog.with_skills(load_learned(settings.learned_dir)).manifests:
+def _tools(settings: Settings, catalog: ToolCatalog) -> int:
+    for manifest in catalog.with_tools(load_learned(settings.learned_dir)).manifests:
         learned = "  [learned]" if manifest.implementation == LEARNED_IMPLEMENTATION else ""
         print(f"{manifest.name}  [{', '.join(manifest.capabilities)}]{learned}")
         print(f"    {manifest.description}")
@@ -157,13 +157,13 @@ def _print_run(run: AgentRun) -> None:
     print(_format_trace(run))
 
 
-def _eval(settings: Settings, catalog: SkillCatalog, offline: bool) -> int:
+def _eval(settings: Settings, catalog: ToolCatalog, offline: bool) -> int:
     summary = _run_suite(settings, catalog, offline)
     print(format_summary(summary))
     return EXIT_OK if summary.all_passed else EXIT_EVAL_FAILED
 
 
-def _flywheel(settings: Settings, catalog: SkillCatalog, offline: bool) -> int:
+def _flywheel(settings: Settings, catalog: ToolCatalog, offline: bool) -> int:
     summary = _run_suite(settings, catalog, offline)
     iteration = record_iteration(summary, settings.runs_dir, datetime.now(UTC))
     print(iteration.report)
@@ -171,8 +171,8 @@ def _flywheel(settings: Settings, catalog: SkillCatalog, offline: bool) -> int:
     return EXIT_OK
 
 
-def _run_suite(settings: Settings, catalog: SkillCatalog, offline: bool) -> EvalSummary:
-    """Each case gets a fresh agent and its own empty learned-skills directory."""
+def _run_suite(settings: Settings, catalog: ToolCatalog, offline: bool) -> EvalSummary:
+    """Each case gets a fresh agent and its own empty learned-tools directory."""
     cases = load_cases(settings.cases_dir)
     with tempfile.TemporaryDirectory(prefix="agentlab-eval-") as root:
 
@@ -186,7 +186,7 @@ def _format_trace(run: AgentRun) -> str:
     lines = ["", f"trace ({run.steps} step(s), stop: {run.stop_reason})"]
     for invocation in run.invocations:
         lines.append(
-            f"  skill {invocation.name}({json.dumps(invocation.arguments)}) "
+            f"  tool {invocation.name}({json.dumps(invocation.arguments)}) "
             f"-> {json.dumps(invocation.result.as_content())}"
         )
     lines.extend(

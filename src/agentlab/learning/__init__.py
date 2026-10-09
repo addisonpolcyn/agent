@@ -1,1 +1,1 @@
-"""Learning new skills at runtime: plan, generate, evaluate in a sandbox, ask, store."""
+"""Learning new tools at runtime: plan, generate, evaluate in a sandbox, ask, store."""

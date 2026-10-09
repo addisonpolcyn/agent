@@ -1,4 +1,4 @@
-"""The runtime eval harness accepts working skills and rejects junk."""
+"""The runtime eval harness accepts working tools and rejects junk."""
 
 from __future__ import annotations
 
@@ -8,31 +8,31 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from agentlab.learning.author import SkillAuthor
+from agentlab.learning.author import ToolAuthor
 from agentlab.learning.harness import (
-    build_skill,
+    build_tool,
     contract_problems,
     evaluate_candidate,
     schema_errors,
     split_tests,
 )
-from agentlab.learning.models import SkillSpec
+from agentlab.learning.models import NewToolSpec
 from agentlab.learning.sandbox import SandboxResult
 from agentlab.llm.fake import ScriptedLLM
 from agentlab.models import LLMResponse, ToolCall, UserMessage
 
 if TYPE_CHECKING:
-    from agentlab.learning.models import SkillContract
+    from agentlab.learning.models import ToolContract
     from agentlab.models import JSONObject
 
-SPEC = SkillSpec(
+SPEC = NewToolSpec(
     name="word_count",
     capability="text_statistics",
     purpose="Count the words in a piece of text.",
     inputs="text: the text",
     outputs="count: number of whitespace-separated words",
 )
-MANIFEST_PATH = Path("word_count/skill.json")
+MANIFEST_PATH = Path("word_count/tool.json")
 
 TESTS: list[JSONObject] = [
     {"name": "two_words", "kind": "normal", "arguments": {"text": "hello world"},
@@ -67,7 +67,7 @@ GOOD = """\
 def run(arguments):
     text = arguments.get("text")
     if not isinstance(text, str):
-        raise SkillError("text must be a string")
+        raise ToolError("text must be a string")
     return {"count": len(text.split())}
 """
 CONSTANT = "def run(arguments):\n    return {'count': 2}\n"
@@ -76,14 +76,14 @@ WRONG_SCHEMA = """\
 def run(arguments):
     text = arguments.get("text")
     if not isinstance(text, str):
-        raise SkillError("text must be a string")
+        raise ToolError("text must be a string")
     return {"words": len(text.split())}
 """
 HARDCODED = """\
 def run(arguments):
     text = arguments.get("text")
     if not isinstance(text, str):
-        raise SkillError("text must be a string")
+        raise ToolError("text must be a string")
     answers = {"hello world": 2, "one, two; three": 3, "": 0}
     return {"count": answers.get(text, 1)}
 """
@@ -95,22 +95,22 @@ def contract_call(contract: JSONObject = CONTRACT) -> LLMResponse:
 
 
 def code_call(code: str) -> LLMResponse:
-    skill = {
+    tool = {
         "description": "Counts words.",
         "when_to_use": "The task needs the number of words in a text.",
         "limitations": "Splits on whitespace only.",
         "code": code,
     }
-    return LLMResponse(text=None, tool_calls=(ToolCall("c", "submit_skill", skill),))
+    return LLMResponse(text=None, tool_calls=(ToolCall("c", "submit_tool", tool),))
 
 
-def build(*responses: LLMResponse) -> tuple[ScriptedLLM, SkillAuthor]:
+def build(*responses: LLMResponse) -> tuple[ScriptedLLM, ToolAuthor]:
     llm = ScriptedLLM(responses)
-    return llm, SkillAuthor(llm)
+    return llm, ToolAuthor(llm)
 
 
-def contract() -> SkillContract:
-    return SkillAuthor(ScriptedLLM([contract_call()])).write_contract(SPEC)
+def contract() -> ToolContract:
+    return ToolAuthor(ScriptedLLM([contract_call()])).write_contract(SPEC)
 
 
 def failed_checks(code: str) -> set[str]:
@@ -122,9 +122,9 @@ def failed_checks(code: str) -> set[str]:
     return {name for name, _ in report.failure_signature}
 
 
-def test_working_skill_is_ready_on_first_attempt() -> None:
+def test_working_tool_is_ready_on_first_attempt() -> None:
     _, author = build(contract_call(), code_call(GOOD))
-    report = build_skill(SPEC, author, manifest_path=MANIFEST_PATH)
+    report = build_tool(SPEC, author, manifest_path=MANIFEST_PATH)
 
     assert report.verdict == "ready"
     assert report.attempts == 1
@@ -135,7 +135,7 @@ def test_working_skill_is_ready_on_first_attempt() -> None:
 
 def test_retry_gets_failures_as_feedback_and_can_recover() -> None:
     llm, author = build(contract_call(), code_call(CONSTANT), code_call(GOOD))
-    report = build_skill(SPEC, author, manifest_path=MANIFEST_PATH)
+    report = build_tool(SPEC, author, manifest_path=MANIFEST_PATH)
 
     assert report.verdict == "ready"
     assert report.attempts == 2
@@ -147,7 +147,7 @@ def test_retry_gets_failures_as_feedback_and_can_recover() -> None:
 
 def test_held_out_inputs_never_reach_the_code_writer() -> None:
     llm, author = build(contract_call(), code_call(HARDCODED), code_call(GOOD))
-    build_skill(SPEC, author, manifest_path=MANIFEST_PATH)
+    build_tool(SPEC, author, manifest_path=MANIFEST_PATH)
 
     for call in llm.calls[1:]:
         brief = call.messages[0]
@@ -160,7 +160,7 @@ def test_gives_up_after_max_attempts() -> None:
     _, author = build(
         contract_call(), code_call(CONSTANT), code_call(CRASHES), code_call(WRONG_SCHEMA)
     )
-    report = build_skill(SPEC, author, manifest_path=MANIFEST_PATH)
+    report = build_tool(SPEC, author, manifest_path=MANIFEST_PATH)
 
     assert report.verdict == "failed"
     assert report.attempts == 3
@@ -170,7 +170,7 @@ def test_gives_up_after_max_attempts() -> None:
 
 def test_stops_early_when_stuck() -> None:
     _, author = build(contract_call(), code_call(CONSTANT), code_call(CONSTANT))
-    report = build_skill(SPEC, author, manifest_path=MANIFEST_PATH)
+    report = build_tool(SPEC, author, manifest_path=MANIFEST_PATH)
 
     assert report.verdict == "failed"
     assert report.attempts == 2
@@ -180,7 +180,7 @@ def test_stops_early_when_stuck() -> None:
 def test_author_that_does_not_submit_is_a_failed_attempt() -> None:
     no_tool = LLMResponse(text="here is some code...")
     _, author = build(contract_call(), no_tool, no_tool)
-    report = build_skill(SPEC, author, manifest_path=MANIFEST_PATH)
+    report = build_tool(SPEC, author, manifest_path=MANIFEST_PATH)
 
     assert report.verdict == "failed"
     assert report.reports[0].checks[0].name == "author"
@@ -188,7 +188,7 @@ def test_author_that_does_not_submit_is_a_failed_attempt() -> None:
 
 def test_model_failure_while_authoring_is_a_failed_attempt() -> None:
     _, author = build(contract_call())  # the code call finds the script exhausted: LLMError
-    report = build_skill(SPEC, author, manifest_path=MANIFEST_PATH)
+    report = build_tool(SPEC, author, manifest_path=MANIFEST_PATH)
 
     assert report.verdict == "failed"
     assert "the model call failed" in report.reports[0].checks[0].detail
@@ -197,7 +197,7 @@ def test_model_failure_while_authoring_is_a_failed_attempt() -> None:
 def test_weak_test_suite_is_rejected_before_any_code_is_written() -> None:
     weak = {**CONTRACT, "tests": TESTS[:2]}
     llm, author = build(contract_call(weak), contract_call(weak))
-    report = build_skill(SPEC, author, manifest_path=MANIFEST_PATH)
+    report = build_tool(SPEC, author, manifest_path=MANIFEST_PATH)
 
     assert report.verdict == "failed"
     assert "could not write a usable test suite" in report.reason
@@ -252,7 +252,7 @@ def test_nondeterminism_is_caught() -> None:
 
 def test_contract_problems() -> None:
     assert contract_problems(contract()) == []
-    no_error_case = SkillAuthor(
+    no_error_case = ToolAuthor(
         ScriptedLLM([contract_call({**CONTRACT, "tests": [*TESTS[:4], TESTS[5], TESTS[1]]})])
     ).write_contract(SPEC)
     problems = contract_problems(no_error_case)

@@ -65,11 +65,11 @@ def test_offline_answers_from_observation() -> None:
     assert response.text == "The result is 4."
 
 
-def test_offline_reports_skill_errors() -> None:
+def test_offline_reports_tool_errors() -> None:
     messages = [
         UserMessage("1 / 0"),
         AssistantMessage(None, (ToolCall("c1", "calc", {"expression": "1 / 0"}),)),
         ToolResultMessage("c1", {"error": "division by zero"}, is_error=True),
     ]
     response = OfflineLLM().generate(system="", messages=messages, tools=[CALC])
-    assert response.text == "The calc skill reported an error: division by zero"
+    assert response.text == "The calc tool reported an error: division by zero"

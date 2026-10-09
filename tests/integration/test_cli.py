@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 def repo_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, repo_root: Path) -> None:
     # Run from an empty directory so a developer's real .env can never leak into tests.
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENTLAB_SKILLS_DIR", str(repo_root / "skills"))
+    monkeypatch.setenv("AGENTLAB_TOOLS_DIR", str(repo_root / "tools"))
     monkeypatch.setenv("AGENTLAB_CASES_DIR", str(repo_root / "evals" / "cases"))
     monkeypatch.setenv("AGENTLAB_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setenv("AGENTLAB_LEARNED_DIR", str(tmp_path / "learned"))
@@ -35,7 +35,7 @@ def test_ask_offline(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["ask", "--offline", "What is 123 * 456?"]) == EXIT_OK
     out = capsys.readouterr().out
     assert out.startswith("The result is 56088.")
-    assert 'skill calculator({"expression": "123 * 456"}) -> {"result": 56088}' in out
+    assert 'tool calculator({"expression": "123 * 456"}) -> {"result": 56088}' in out
 
 
 def test_ask_without_key_fails_clearly(capsys: pytest.CaptureFixture[str]) -> None:
@@ -59,17 +59,17 @@ def test_flywheel_offline_records_iterations(
     assert len(list((tmp_path / "runs").iterdir())) == 2
 
 
-def test_skills_lists_catalog(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["skills"]) == EXIT_OK
+def test_tools_lists_catalog(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["tools"]) == EXIT_OK
     assert "calculator  [arithmetic]" in capsys.readouterr().out
 
 
-def test_bad_skills_dir_is_reported(
+def test_bad_tools_dir_is_reported(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("AGENTLAB_SKILLS_DIR", str(tmp_path / "missing"))
-    assert main(["skills"]) == EXIT_ERROR
-    assert "skills directory not found" in capsys.readouterr().err
+    monkeypatch.setenv("AGENTLAB_TOOLS_DIR", str(tmp_path / "missing"))
+    assert main(["tools"]) == EXIT_ERROR
+    assert "tools directory not found" in capsys.readouterr().err
 
 
 def test_chat_answers_each_question_until_exit(
@@ -118,15 +118,15 @@ def test_reads_settings_from_dotenv_in_working_directory(
     tmp_path: Path,
     repo_root: Path,
 ) -> None:
-    monkeypatch.delenv("AGENTLAB_SKILLS_DIR")
-    (tmp_path / ".env").write_text(f"AGENTLAB_SKILLS_DIR={repo_root / 'skills'}\n")
-    assert main(["skills"]) == EXIT_OK
+    monkeypatch.delenv("AGENTLAB_TOOLS_DIR")
+    (tmp_path / ".env").write_text(f"AGENTLAB_TOOLS_DIR={repo_root / 'tools'}\n")
+    assert main(["tools"]) == EXIT_OK
     assert "calculator" in capsys.readouterr().out
 
 
 def test_malformed_dotenv_is_reported(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     (tmp_path / ".env").write_text("this is not a setting\n")
-    assert main(["skills"]) == EXIT_ERROR
+    assert main(["tools"]) == EXIT_ERROR
     assert ".env:1: expected KEY=VALUE" in capsys.readouterr().err
 
 

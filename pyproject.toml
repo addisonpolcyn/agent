@@ -1,7 +1,7 @@
 [project]
 name = "agentlab"
 version = "0.1.0"
-description = "A small, evaluation-driven agent that discovers and uses skills."
+description = "A small, evaluation-driven agent that discovers and uses tools."
 requires-python = ">=3.14"
 authors = [{ name = "Addison Polcyn", email = "addisonpolcyn@gmail.com" }]
 dependencies = ["anthropic>=1.12"]

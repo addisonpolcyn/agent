@@ -1,14 +1,14 @@
 id = "learn_reuses_existing"
 kind = "agent"
 description = """\
-Learning is available and would be approved, but an existing skill already fits. The agent \
+Learning is available and would be approved, but an existing tool already fits. The agent \
 reuses it and never proposes building anything."""
-tags = ["agent", "learning", "skill-selection"]
+tags = ["agent", "learning", "tool-selection"]
 task = "What is 2 ** 10 + 17?"
 approval = "approve"
 
 [expect]
-skills_used = ["calculator"]
+tools_used = ["calculator"]
 learning_outcome = "none"
 answer_contains = ["1041"]
 stop_reason = "answered"

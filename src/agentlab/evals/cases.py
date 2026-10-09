@@ -21,15 +21,15 @@ _AGENT_CHECKS = frozenset(
     {
         "answer_contains",
         "answer_excludes_patterns",
-        "skills_used",
-        "no_skills_used",
+        "tools_used",
+        "no_tools_used",
         "capability_gap",
         "stop_reason",
-        "skills_learned",
+        "tools_learned",
         "learning_outcome",
     }
 )
-_SKILL_CHECKS = frozenset({"output_equals", "error_contains"})
+_TOOL_CHECKS = frozenset({"output_equals", "error_contains"})
 
 
 def load_cases(cases_dir: Path) -> list[EvalCase]:
@@ -50,8 +50,8 @@ def load_case(path: Path) -> EvalCase:
         raise EvalCaseError(f"{path}: invalid TOML: {exc}") from exc
 
     kind = data.get("kind")
-    if kind not in ("agent", "skill"):
-        raise EvalCaseError(f"{path}: 'kind' must be 'agent' or 'skill'")
+    if kind not in ("agent", "tool"):
+        raise EvalCaseError(f"{path}: 'kind' must be 'agent' or 'tool'")
     approval = data.get("approval", "deny_plan")
     if approval not in APPROVALS:
         raise EvalCaseError(f"{path}: 'approval' must be one of {', '.join(APPROVALS)}")
@@ -64,7 +64,7 @@ def load_case(path: Path) -> EvalCase:
         description=_require_str(data, "description", path),
         tags=tuple(cast("list[str]", data.get("tags", []))),
         task=data.get("task"),
-        skill=data.get("skill"),
+        tool=data.get("tool"),
         arguments=cast("dict[str, Any]", data.get("arguments", {})),
         approval=approval,
         earlier_turns=tuple(cast("list[str]", data.get("earlier_turns", []))),
@@ -74,13 +74,13 @@ def load_case(path: Path) -> EvalCase:
     )
     if kind == "agent" and not case.task:
         raise EvalCaseError(f"{path}: agent cases need a 'task'")
-    if kind == "skill" and not case.skill:
-        raise EvalCaseError(f"{path}: skill cases need a 'skill'")
+    if kind == "tool" and not case.tool:
+        raise EvalCaseError(f"{path}: tool cases need a 'tool'")
     return case
 
 
 def _check_expectation_keys(path: Path, kind: CaseKind, expect: dict[str, Any]) -> None:
-    allowed = _AGENT_CHECKS if kind == "agent" else _SKILL_CHECKS
+    allowed = _AGENT_CHECKS if kind == "agent" else _TOOL_CHECKS
     if not expect:
         raise EvalCaseError(f"{path}: '[expect]' must declare at least one check")
     unknown = sorted(set(expect) - allowed)
@@ -92,11 +92,11 @@ def _expectations(expect: dict[str, Any]) -> Expectations:
     return Expectations(
         answer_contains=tuple(expect.get("answer_contains", ())),
         answer_excludes_patterns=tuple(expect.get("answer_excludes_patterns", ())),
-        skills_used=tuple(expect.get("skills_used", ())),
-        no_skills_used=bool(expect.get("no_skills_used", False)),
+        tools_used=tuple(expect.get("tools_used", ())),
+        no_tools_used=bool(expect.get("no_tools_used", False)),
         capability_gap=expect.get("capability_gap"),
         stop_reason=expect.get("stop_reason"),
-        skills_learned=tuple(expect.get("skills_learned", ())),
+        tools_learned=tuple(expect.get("tools_learned", ())),
         learning_outcome=expect.get("learning_outcome"),
         output_equals=expect.get("output_equals"),
         error_contains=expect.get("error_contains"),

@@ -16,7 +16,7 @@ from agentlab.config import Settings
 from agentlab.llm.claude import ClaudeClient
 
 if TYPE_CHECKING:
-    from agentlab.skills.catalog import SkillCatalog
+    from agentlab.tools.catalog import ToolCatalog
 
 SETTINGS = Settings.load(Path(__file__).resolve().parents[2] / ".env")
 
@@ -30,7 +30,7 @@ pytestmark = [
 
 
 @pytest.fixture
-def agent(catalog: SkillCatalog) -> Agent:
+def agent(catalog: ToolCatalog) -> Agent:
     assert SETTINGS.anthropic_api_key is not None
     client = ClaudeClient(api_key=SETTINGS.anthropic_api_key.reveal(), model=SETTINGS.model)
     return Agent(client, catalog)
@@ -38,7 +38,7 @@ def agent(catalog: SkillCatalog) -> Agent:
 
 def test_claude_uses_calculator(agent: Agent) -> None:
     run = agent.run("What is 123 * 456? Use a tool.")
-    assert "calculator" in run.skills_used
+    assert "calculator" in run.tools_used
     assert run.answer is not None
     assert "56088" in run.answer.replace(",", "")
 

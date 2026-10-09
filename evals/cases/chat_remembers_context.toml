@@ -9,6 +9,6 @@ task = "Now add 1000 to that result."
 model_only = true
 
 [expect]
-skills_used = ["calculator"]
+tools_used = ["calculator"]
 answer_contains = ["7170"]
 stop_reason = "answered"

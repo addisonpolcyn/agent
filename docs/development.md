@@ -41,9 +41,9 @@ If a key leaks, revoke it in the Console right away and put the new one in `.env
 | Ask the agent (offline) | `uv run agentlab ask --offline "What is 123 * 456?"` |
 | Ask the agent (Claude) | `uv run agentlab ask "What is 123 * 456?"` |
 | Interactive session | `uv run agentlab chat [--offline]` (the conversation is remembered; `reset` clears it, `exit` or Ctrl-D quits) |
-| List discovered and learned skills | `uv run agentlab skills` (learned ones are tagged `[learned]`) |
-| Turn off on-demand learning | `uv run agentlab ask --no-learn "..."` (also ignores learned skills) |
-| Forget a learned skill | `rm -r .agentlab/learned/<name>` |
+| List discovered and learned tools | `uv run agentlab tools` (learned ones are tagged `[learned]`) |
+| Turn off on-demand learning | `uv run agentlab ask --no-learn "..."` (also ignores learned tools) |
+| Forget a learned tool | `rm -r .agentlab/learned/<name>` |
 | Run evals (gate) | `uv run agentlab eval --offline` |
 | Run a flywheel iteration | `uv run agentlab flywheel --offline` |
 | Tests | `uv run pytest` (or `scripts/test.sh`) |
@@ -52,7 +52,7 @@ If a key leaks, revoke it in the Console right away and put the new one in `.env
 | All pre-commit hooks | `uv run pre-commit run --all-files` |
 | Eval and record iteration | `scripts/eval.sh` (offline) / `scripts/eval.sh --live` |
 
-Paths default to `./skills`, `./evals/cases`, `./runs` and `./.agentlab/learned`, relative to the current directory, so run commands from the repo root. Override them with `AGENTLAB_SKILLS_DIR`, `AGENTLAB_CASES_DIR`, `AGENTLAB_RUNS_DIR` and `AGENTLAB_LEARNED_DIR`. `.agentlab/` is local runtime state and git-ignored: learned skills are never committed.
+Paths default to `./tools`, `./evals/cases`, `./runs` and `./.agentlab/learned`, relative to the current directory, so run commands from the repo root. Override them with `AGENTLAB_TOOLS_DIR`, `AGENTLAB_CASES_DIR`, `AGENTLAB_RUNS_DIR` and `AGENTLAB_LEARNED_DIR`. `.agentlab/` is local runtime state and git-ignored: learned tools are never committed.
 
 ## The development loop
 
@@ -60,7 +60,7 @@ Paths default to `./skills`, `./evals/cases`, `./runs` and `./.agentlab/learned`
 change → uv run agentlab flywheel --offline → read failures.md → targeted fix → repeat
 ```
 
-For anything that touches model behavior (prompts, tool descriptions, skill selection), also run the flywheel without `--offline`. See [evaluation.md](evaluation.md).
+For anything that touches model behavior (prompts, tool descriptions, tool selection), also run the flywheel without `--offline`. See [evaluation.md](evaluation.md).
 
 ## Tests
 

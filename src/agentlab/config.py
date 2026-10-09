@@ -35,7 +35,7 @@ class Secret:
 @dataclass(frozen=True)
 class Settings:
     model: str = DEFAULT_MODEL
-    skills_dir: Path = Path("skills")
+    tools_dir: Path = Path("tools")
     cases_dir: Path = Path("evals/cases")
     runs_dir: Path = Path("runs")
     learned_dir: Path = Path(".agentlab/learned")
@@ -52,7 +52,7 @@ class Settings:
         key = env.get("ANTHROPIC_API_KEY", "").strip()
         return cls(
             model=env.get("AGENTLAB_MODEL") or defaults.model,
-            skills_dir=Path(env.get("AGENTLAB_SKILLS_DIR") or defaults.skills_dir),
+            tools_dir=Path(env.get("AGENTLAB_TOOLS_DIR") or defaults.tools_dir),
             cases_dir=Path(env.get("AGENTLAB_CASES_DIR") or defaults.cases_dir),
             runs_dir=Path(env.get("AGENTLAB_RUNS_DIR") or defaults.runs_dir),
             learned_dir=Path(env.get("AGENTLAB_LEARNED_DIR") or defaults.learned_dir),

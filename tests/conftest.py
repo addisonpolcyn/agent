@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agentlab.skills.catalog import SkillCatalog, discover_catalog
+from agentlab.tools.catalog import ToolCatalog, discover_catalog
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -15,8 +15,8 @@ def repo_root() -> Path:
 
 
 @pytest.fixture
-def skills_dir() -> Path:
-    return REPO_ROOT / "skills"
+def tools_dir() -> Path:
+    return REPO_ROOT / "tools"
 
 
 @pytest.fixture
@@ -25,5 +25,5 @@ def cases_dir() -> Path:
 
 
 @pytest.fixture
-def catalog(skills_dir: Path) -> SkillCatalog:
-    return discover_catalog(skills_dir)
+def catalog(tools_dir: Path) -> ToolCatalog:
+    return discover_catalog(tools_dir)

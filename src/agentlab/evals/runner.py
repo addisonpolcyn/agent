@@ -1,8 +1,8 @@
 """Run eval cases and score them.
 
-Agent cases run the full loop and are checked against the trace (answer, skills used,
-capability gaps, learning, stop reason). Each runs on a fresh agent, so a skill learned in one
-case can't leak into another. Skill cases call one skill directly: component evaluation.
+Agent cases run the full loop and are checked against the trace (answer, tools used,
+capability gaps, learning, stop reason). Each runs on a fresh agent, so a tool learned in one
+case can't leak into another. Tool cases call one tool directly: component evaluation.
 """
 
 from __future__ import annotations
@@ -20,18 +20,18 @@ if TYPE_CHECKING:
     from agentlab.agent.loop import Agent, AgentRun
     from agentlab.evals.models import Approval, Expectations
     from agentlab.models import Message
-    from agentlab.skills.catalog import SkillCatalog
-    from agentlab.skills.models import SkillResult
+    from agentlab.tools.catalog import ToolCatalog
+    from agentlab.tools.models import ToolResult
 
 
 def run_suite(
     cases: Iterable[EvalCase],
     agent_for: Callable[[EvalCase], Agent],
-    catalog: SkillCatalog,
+    catalog: ToolCatalog,
     *,
     offline: bool = False,
 ) -> EvalSummary:
-    """``agent_for`` builds a fresh agent (fresh learned skills, fresh file approvals) per case.
+    """``agent_for`` builds a fresh agent (fresh learned tools, fresh file approvals) per case.
 
     Offline runs skip ``model_only`` cases: a stand-in can't show what they measure.
     """
@@ -46,11 +46,11 @@ def run_suite(
 
 
 def run_case(
-    case: EvalCase, agent_for: Callable[[EvalCase], Agent], catalog: SkillCatalog
+    case: EvalCase, agent_for: Callable[[EvalCase], Agent], catalog: ToolCatalog
 ) -> EvalResult:
     match case:
-        case EvalCase(kind="skill", skill=str() as skill):
-            checks = skill_checks(case.expect, catalog.execute(skill, case.arguments))
+        case EvalCase(kind="tool", tool=str() as tool):
+            checks = tool_checks(case.expect, catalog.execute(tool, case.arguments))
         case EvalCase(kind="agent", task=str() as task):
             try:
                 run = _run_conversation(agent_for(case), case, task)
@@ -72,20 +72,20 @@ def agent_checks(expect: Expectations, run: AgentRun) -> list[CheckResult]:
         match = re.search(pattern, answer)
         detail = f"answer matched /{pattern}/: {match.group(0)!r}" if match else ""
         checks.append(_check("answer_excludes_patterns", match is None, detail))
-    for skill in expect.skills_used:
-        used = skill in run.skills_used
-        checks.append(_check("skills_used", used, f"{skill!r} not in {list(run.skills_used)}"))
-    if expect.no_skills_used:
-        detail = f"skills were used: {list(run.skills_used)}"
-        checks.append(_check("no_skills_used", not run.skills_used, detail))
+    for tool in expect.tools_used:
+        used = tool in run.tools_used
+        checks.append(_check("tools_used", used, f"{tool!r} not in {list(run.tools_used)}"))
+    if expect.no_tools_used:
+        detail = f"tools were used: {list(run.tools_used)}"
+        checks.append(_check("no_tools_used", not run.tools_used, detail))
     if expect.capability_gap is not None:
         reported = [gap.capability for gap in run.capability_gaps]
         detail = f"expected gap {expect.capability_gap!r}, reported {reported}"
         checks.append(_check("capability_gap", expect.capability_gap in reported, detail))
-    for skill in expect.skills_learned:
-        learned = skill in run.skills_learned
+    for tool in expect.tools_learned:
+        learned = tool in run.tools_learned
         checks.append(
-            _check("skills_learned", learned, f"{skill!r} not in {list(run.skills_learned)}")
+            _check("tools_learned", learned, f"{tool!r} not in {list(run.tools_learned)}")
         )
     if expect.learning_outcome is not None:
         outcomes = [outcome.outcome for outcome in run.learning]
@@ -115,7 +115,7 @@ def approver_for(approval: Approval) -> FixedApprover:
     return FixedApprover(plan=approval == "approve")
 
 
-def skill_checks(expect: Expectations, result: SkillResult) -> list[CheckResult]:
+def tool_checks(expect: Expectations, result: ToolResult) -> list[CheckResult]:
     checks: list[CheckResult] = []
     if expect.output_equals is not None:
         detail = f"expected {expect.output_equals}, got {result.as_content()}"

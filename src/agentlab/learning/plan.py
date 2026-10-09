@@ -1,9 +1,9 @@
 """The model's plan for a missing capability, and the deterministic rules it must pass.
 
 The model proposes; this module disposes. A plan is a few generic steps, each either reusing
-an existing skill or describing a new one. Plans that are too large, that duplicate what the
+an existing tool or describing a new one. Plans that are too large, that duplicate what the
 catalog already provides never reach the user's approval gate. Anything else may be learned:
-the user approves the plan, and that one approval covers building and using the skills.
+the user approves the plan, and that one approval covers building and using the tools.
 """
 
 from __future__ import annotations
@@ -12,30 +12,30 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from agentlab.learning.models import SkillSpec
+from agentlab.learning.models import NewToolSpec
 from agentlab.models import ToolSpec
 
 if TYPE_CHECKING:
     from agentlab.models import JSONObject
-    from agentlab.skills.catalog import SkillCatalog
+    from agentlab.tools.catalog import ToolCatalog
 
 MAX_STEPS = 5
-MAX_NEW_SKILLS = 2
+MAX_NEW_TOOLS = 2
 MAX_NAME_LENGTH = 40
 _SNAKE_CASE = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")
 
 type PlanOutcome = Literal["accepted", "malformed", "refused_too_large", "refused_reuse"]
 
-PROPOSE_SKILL_PLAN = ToolSpec(
-    name="propose_skill_plan",
+PROPOSE_TOOL_PLAN = ToolSpec(
+    name="propose_tool_plan",
     description=(
-        "Propose building new skills when none of the available tools can do what the task "
+        "Propose building new tools when none of the available tools can do what the task "
         "needs. Break the need into at most "
         f"{MAX_STEPS} small steps. Each step either reuses an existing tool (reuse = its name) or "
-        f"describes a new GENERIC skill (new_skill), at most {MAX_NEW_SKILLS} new skills. Name "
-        "new skills for the general operation (html_to_text, word_count), never for this task. "
-        "New skills are Python run on the user's machine with full access: any library, local "
-        "files (set reads_files when the skill reads them), the network and commands. The user "
+        f"describes a new GENERIC tool (new_tool), at most {MAX_NEW_TOOLS} new tools. Name "
+        "new tools for the general operation (html_to_text, word_count), never for this task. "
+        "New tools are Python run on the user's machine with full access: any library, local "
+        "files (set reads_files when the tool reads them), the network and commands. The user "
         "must approve the plan before anything is built."
     ),
     input_schema={
@@ -43,7 +43,7 @@ PROPOSE_SKILL_PLAN = ToolSpec(
         "required": ["goal", "steps"],
         "additionalProperties": False,
         "properties": {
-            "goal": {"type": "string", "description": "what the skills will let you do"},
+            "goal": {"type": "string", "description": "what the tools will let you do"},
             "steps": {
                 "type": "array",
                 "items": {
@@ -57,7 +57,7 @@ PROPOSE_SKILL_PLAN = ToolSpec(
                             "description": "general snake_case capability, e.g. html_parsing",
                         },
                         "reuse": {"type": "string", "description": "existing tool to use"},
-                        "new_skill": {
+                        "new_tool": {
                             "type": "object",
                             "required": ["name", "purpose", "inputs", "outputs"],
                             "additionalProperties": False,
@@ -70,7 +70,7 @@ PROPOSE_SKILL_PLAN = ToolSpec(
                         },
                         "reads_files": {
                             "type": "boolean",
-                            "description": "the new skill reads local files or folders",
+                            "description": "the new tool reads local files or folders",
                         },
                     },
                 },
@@ -89,28 +89,28 @@ class PlanStep:
     summary: str
     capability: str
     reuse: str | None
-    new_skill: SkillSpec | None
+    new_tool: NewToolSpec | None
 
 
 @dataclass(frozen=True)
-class SkillPlan:
+class ToolPlan:
     goal: str
     steps: tuple[PlanStep, ...]
 
     @property
-    def new_skills(self) -> tuple[SkillSpec, ...]:
-        return tuple(step.new_skill for step in self.steps if step.new_skill is not None)
+    def new_tools(self) -> tuple[NewToolSpec, ...]:
+        return tuple(step.new_tool for step in self.steps if step.new_tool is not None)
 
     def describe(self) -> str:
         """Human-readable plan for the approval gate."""
         lines = [f"Goal: {self.goal}"]
         for number, step in enumerate(self.steps, start=1):
-            if step.new_skill is not None:
-                how = f"build new skill '{step.new_skill.name}': {step.new_skill.purpose}"
-                if step.new_skill.reads_files:
+            if step.new_tool is not None:
+                how = f"build new tool '{step.new_tool.name}': {step.new_tool.purpose}"
+                if step.new_tool.reads_files:
                     how += " (reads local files)"
             else:
-                how = f"reuse existing skill '{step.reuse}'"
+                how = f"reuse existing tool '{step.reuse}'"
             lines.append(f"  {number}. {step.summary} [{step.capability}] -> {how}")
         return "\n".join(lines)
 
@@ -121,17 +121,17 @@ class PlanVerdict:
     reason: str = ""
 
 
-def parse_plan(arguments: JSONObject) -> SkillPlan:
+def parse_plan(arguments: JSONObject) -> ToolPlan:
     goal = arguments.get("goal")
     steps = arguments.get("steps")
     if not isinstance(goal, str) or not goal.strip():
         raise PlanError("'goal' must be a non-empty string")
     if not isinstance(steps, list) or not steps:
         raise PlanError("'steps' must be a non-empty list")
-    return SkillPlan(goal, tuple(_parse_step(raw) for raw in cast("list[object]", steps)))
+    return ToolPlan(goal, tuple(_parse_step(raw) for raw in cast("list[object]", steps)))
 
 
-def validate_plan(plan: SkillPlan, catalog: SkillCatalog) -> PlanVerdict:
+def validate_plan(plan: ToolPlan, catalog: ToolCatalog) -> PlanVerdict:
     """The first rule that objects decides; a plan no rule objects to is accepted."""
     for rule in (_size_rule, _reuse_rule, _naming_rule):
         verdict = rule(plan, catalog)
@@ -140,51 +140,51 @@ def validate_plan(plan: SkillPlan, catalog: SkillCatalog) -> PlanVerdict:
     return PlanVerdict("accepted")
 
 
-def _size_rule(plan: SkillPlan, catalog: SkillCatalog) -> PlanVerdict | None:
+def _size_rule(plan: ToolPlan, catalog: ToolCatalog) -> PlanVerdict | None:
     if len(plan.steps) > MAX_STEPS:
         return PlanVerdict(
             "refused_too_large",
             f"{len(plan.steps)} steps is more than the limit of {MAX_STEPS}. Split the task "
             "into smaller requests.",
         )
-    if len(plan.new_skills) > MAX_NEW_SKILLS:
+    if len(plan.new_tools) > MAX_NEW_TOOLS:
         return PlanVerdict(
             "refused_too_large",
-            f"{len(plan.new_skills)} new skills is more than the limit of {MAX_NEW_SKILLS} per "
+            f"{len(plan.new_tools)} new tools is more than the limit of {MAX_NEW_TOOLS} per "
             "request. Learn the most general one first.",
         )
     return None
 
 
-def _reuse_rule(plan: SkillPlan, catalog: SkillCatalog) -> PlanVerdict | None:
+def _reuse_rule(plan: ToolPlan, catalog: ToolCatalog) -> PlanVerdict | None:
     provided = _capabilities(catalog)
     for step in plan.steps:
         if step.reuse is not None and step.reuse not in catalog:
             return PlanVerdict("malformed", f"step {step.summary!r} reuses unknown {step.reuse!r}")
-        spec = step.new_skill
+        spec = step.new_tool
         if spec is not None and spec.name in catalog:
-            return PlanVerdict("refused_reuse", f"a skill named {spec.name!r} exists; use it")
+            return PlanVerdict("refused_reuse", f"a tool named {spec.name!r} exists; use it")
         if spec is not None and spec.capability in provided:
             return PlanVerdict(
                 "refused_reuse",
                 f"'{provided[spec.capability]}' already provides {spec.capability!r}; use it",
             )
-    if not plan.new_skills:
-        return PlanVerdict("refused_reuse", "every step reuses an existing skill; call them")
+    if not plan.new_tools:
+        return PlanVerdict("refused_reuse", "every step reuses an existing tool; call them")
     return None
 
 
-def _naming_rule(plan: SkillPlan, catalog: SkillCatalog) -> PlanVerdict | None:
-    names = [spec.name for spec in plan.new_skills]
+def _naming_rule(plan: ToolPlan, catalog: ToolCatalog) -> PlanVerdict | None:
+    names = [spec.name for spec in plan.new_tools]
     for name in names:
         if not _SNAKE_CASE.match(name) or len(name) > MAX_NAME_LENGTH:
             return PlanVerdict("malformed", f"{name!r} is not a short snake_case name")
     if len(set(names)) != len(names):
-        return PlanVerdict("malformed", "new skill names must be distinct")
+        return PlanVerdict("malformed", "new tool names must be distinct")
     return None
 
 
-def _capabilities(catalog: SkillCatalog) -> dict[str, str]:
+def _capabilities(catalog: ToolCatalog) -> dict[str, str]:
     return {
         capability: manifest.name
         for manifest in catalog.manifests
@@ -199,27 +199,27 @@ def _parse_step(raw: object) -> PlanStep:
     summary, capability = step.get("summary"), step.get("capability")
     if not isinstance(summary, str) or not isinstance(capability, str) or not capability:
         raise PlanError("each step needs a 'summary' and a 'capability'")
-    reuse, new_skill = step.get("reuse"), step.get("new_skill")
-    if (reuse is None) == (new_skill is None):
-        raise PlanError(f"step '{summary}' needs exactly one of 'reuse' or 'new_skill'")
+    reuse, new_tool = step.get("reuse"), step.get("new_tool")
+    if (reuse is None) == (new_tool is None):
+        raise PlanError(f"step '{summary}' needs exactly one of 'reuse' or 'new_tool'")
     if reuse is not None and not isinstance(reuse, str):
-        raise PlanError(f"step '{summary}': 'reuse' must be a skill name")
+        raise PlanError(f"step '{summary}': 'reuse' must be a tool name")
     return PlanStep(
         summary=summary,
         capability=capability,
         reuse=reuse,
-        new_skill=None
-        if new_skill is None
-        else _parse_spec(new_skill, capability, reads_files=step.get("reads_files") is True),
+        new_tool=None
+        if new_tool is None
+        else _parse_spec(new_tool, capability, reads_files=step.get("reads_files") is True),
     )
 
 
-def _parse_spec(raw: object, capability: str, *, reads_files: bool) -> SkillSpec:
+def _parse_spec(raw: object, capability: str, *, reads_files: bool) -> NewToolSpec:
     if not isinstance(raw, dict):
-        raise PlanError("'new_skill' must be an object")
+        raise PlanError("'new_tool' must be an object")
     spec = cast("dict[str, Any]", raw)
     fields = [spec.get(key) for key in ("name", "purpose", "inputs", "outputs")]
     if not all(isinstance(value, str) and value.strip() for value in fields):
-        raise PlanError("'new_skill' needs non-empty name, purpose, inputs and outputs")
+        raise PlanError("'new_tool' needs non-empty name, purpose, inputs and outputs")
     name, purpose, inputs, outputs = cast("list[str]", fields)
-    return SkillSpec(name, capability, purpose, inputs, outputs, reads_files)
+    return NewToolSpec(name, capability, purpose, inputs, outputs, reads_files)

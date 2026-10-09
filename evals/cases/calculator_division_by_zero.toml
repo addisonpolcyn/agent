@@ -1,8 +1,8 @@
 id = "calculator_division_by_zero"
-kind = "skill"
+kind = "tool"
 description = "Component check: invalid arithmetic is a reported error, not a crash."
 tags = ["component", "calculator"]
-skill = "calculator"
+tool = "calculator"
 arguments = { expression = "1 / 0" }
 
 [expect]

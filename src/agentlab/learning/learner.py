@@ -1,9 +1,9 @@
-"""Learn skills on demand: validate the plan, ask the user, build and evaluate, store.
+"""Learn tools on demand: validate the plan, ask the user, build and evaluate, store.
 
-    plan -> validate_plan -> user approves the plan -> build_skill (harness)
+    plan -> validate_plan -> user approves the plan -> build_tool (harness)
          -> saved under the local learned dir -> added to the catalog
 
-Learned skills live only in the local learned directory (``.agentlab/learned/`` by default,
+Learned tools live only in the local learned directory (``.agentlab/learned/`` by default,
 git-ignored). They are reloaded on later runs and run in a separate process, unrestricted
 (see ``sandbox.py``). The user's one approval, of the plan, covers building and using them.
 """
@@ -15,11 +15,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from agentlab.learning.author import LEARNED_IMPLEMENTATION
-from agentlab.learning.harness import MAX_ATTEMPTS, build_skill
-from agentlab.learning.plan import MAX_NEW_SKILLS, PlanError, parse_plan, validate_plan
+from agentlab.learning.harness import MAX_ATTEMPTS, build_tool
+from agentlab.learning.plan import MAX_NEW_TOOLS, PlanError, parse_plan, validate_plan
 from agentlab.learning.sandbox import check_source, run_sandboxed
-from agentlab.skills.catalog import manifest_from_data
-from agentlab.skills.models import SkillError, SkillManifestError
+from agentlab.tools.catalog import manifest_from_data
+from agentlab.tools.models import ToolError, ToolManifestError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -27,15 +27,15 @@ if TYPE_CHECKING:
     from typing import Any
 
     from agentlab.learning.approval import Approver
-    from agentlab.learning.author import SkillAuthor
+    from agentlab.learning.author import ToolAuthor
     from agentlab.learning.harness import Runner
     from agentlab.learning.models import HarnessReport
     from agentlab.models import JSONObject
-    from agentlab.skills.catalog import SkillCatalog, SkillFunction
-    from agentlab.skills.models import SkillManifest
+    from agentlab.tools.catalog import ToolCatalog, ToolFunction
+    from agentlab.tools.models import ToolManifest
 
-SKILL_FILE = "skill.json"
-CODE_FILE = "skill.py"
+TOOL_FILE = "tool.json"
+CODE_FILE = "tool.py"
 TESTS_FILE = "tests.json"
 REPORT_FILE = "report.json"
 
@@ -44,17 +44,17 @@ _GUIDANCE = {
     "malformed": "Fix the plan and propose it again, or tell the user what you cannot do.",
     "refused_too_large": "Tell the user this is too large to learn in one go and suggest "
     "splitting it into smaller requests.",
-    "refused_reuse": "Use the existing skills instead of building new ones.",
+    "refused_reuse": "Use the existing tools instead of building new ones.",
     "declined_plan": "The user said no. Tell them plainly what you cannot do without it.",
-    "failed": "Tell the user the skill isn't working after a reasonable number of attempts, "
+    "failed": "Tell the user the tool isn't working after a reasonable number of attempts, "
     "and why. Do not guess the answer instead.",
-    "ready": "The new skills are now available as tools.",
+    "ready": "The new tools are now available as tools.",
 }
 
 
 @dataclass(frozen=True)
 class LearningOutcome:
-    """What happened to one ``propose_skill_plan`` call. Recorded in the ``AgentRun``."""
+    """What happened to one ``propose_tool_plan`` call. Recorded in the ``AgentRun``."""
 
     outcome: str
     reason: str
@@ -68,16 +68,16 @@ class LearningOutcome:
     def observation(self) -> JSONObject:
         return {
             "outcome": self.outcome,
-            "learned_skills": list(self.learned),
+            "learned_tools": list(self.learned),
             "detail": self.reason,
             "next": _GUIDANCE[self.outcome],
         }
 
 
-class SkillLearner:
+class ToolLearner:
     def __init__(
         self,
-        author: SkillAuthor,
+        author: ToolAuthor,
         store_dir: Path,
         *,
         run: Runner = run_sandboxed,
@@ -88,21 +88,21 @@ class SkillLearner:
         self._run = run
         self._max_attempts = max_attempts
 
-    def load_learned(self) -> list[tuple[SkillManifest, SkillFunction]]:
+    def load_learned(self) -> list[tuple[ToolManifest, ToolFunction]]:
         return load_learned(self._store_dir, self._run)
 
     def learn(
         self,
         arguments: JSONObject,
-        catalog: SkillCatalog,
+        catalog: ToolCatalog,
         approver: Approver | None,
         *,
         already_learned: int = 0,
-    ) -> tuple[LearningOutcome, SkillCatalog]:
-        """Handle one plan. Returns the outcome and the catalog including any new skills.
+    ) -> tuple[LearningOutcome, ToolCatalog]:
+        """Handle one plan. Returns the outcome and the catalog including any new tools.
 
-        ``already_learned`` counts skills learned earlier for the same request: the limit on
-        new skills is per request, so several small plans can't add up past it.
+        ``already_learned`` counts tools learned earlier for the same request: the limit on
+        new tools is per request, so several small plans can't add up past it.
         """
         try:
             plan = parse_plan(arguments)
@@ -111,10 +111,10 @@ class SkillLearner:
         verdict = validate_plan(plan, catalog)
         if verdict.outcome != "accepted":
             return LearningOutcome(verdict.outcome, verdict.reason), catalog
-        if already_learned + len(plan.new_skills) > MAX_NEW_SKILLS:
+        if already_learned + len(plan.new_tools) > MAX_NEW_TOOLS:
             reason = (
-                f"{already_learned} skill(s) already learned for this request; "
-                f"{len(plan.new_skills)} more is past the limit of {MAX_NEW_SKILLS} per request. "
+                f"{already_learned} tool(s) already learned for this request; "
+                f"{len(plan.new_tools)} more is past the limit of {MAX_NEW_TOOLS} per request. "
                 "Use what you learned, and suggest the rest as separate requests."
             )
             return LearningOutcome("refused_too_large", reason), catalog
@@ -123,11 +123,11 @@ class SkillLearner:
 
         learned: list[str] = []
         reports: list[HarnessReport] = []
-        for spec in plan.new_skills:
-            report = build_skill(
+        for spec in plan.new_tools:
+            report = build_tool(
                 spec,
                 self._author,
-                manifest_path=self._store_dir / spec.name / SKILL_FILE,
+                manifest_path=self._store_dir / spec.name / TOOL_FILE,
                 run=self._run,
                 max_attempts=self._max_attempts,
             )
@@ -137,8 +137,8 @@ class SkillLearner:
                 return LearningOutcome(
                     "failed", report.summary(), tuple(learned), tuple(reports)
                 ), catalog
-            saved = _save_skill(self._store_dir, report, self._run)
-            catalog = catalog.with_skills([saved])
+            saved = _save_tool(self._store_dir, report, self._run)
+            catalog = catalog.with_tools([saved])
             learned.append(spec.name)
         summary = "; ".join(report.summary() for report in reports)
         return LearningOutcome("ready", summary, tuple(learned), tuple(reports)), catalog
@@ -146,37 +146,37 @@ class SkillLearner:
 
 def load_learned(
     store_dir: Path, run: Runner = run_sandboxed
-) -> list[tuple[SkillManifest, SkillFunction]]:
-    """Every saved skill in ``store_dir``. Malformed ones fail loudly, like
+) -> list[tuple[ToolManifest, ToolFunction]]:
+    """Every saved tool in ``store_dir``. Malformed ones fail loudly, like
     ``discover_catalog``: the files may have been edited by hand."""
-    skills: list[tuple[SkillManifest, SkillFunction]] = []
-    for path in sorted(store_dir.glob(f"*/{SKILL_FILE}")):
+    tools: list[tuple[ToolManifest, ToolFunction]] = []
+    for path in sorted(store_dir.glob(f"*/{TOOL_FILE}")):
         try:
             manifest = manifest_from_data(json.loads(path.read_text(encoding="utf-8")), path)
         except json.JSONDecodeError as exc:
-            raise SkillManifestError(f"{path}: invalid JSON: {exc}") from exc
+            raise ToolManifestError(f"{path}: invalid JSON: {exc}") from exc
         if manifest.implementation != LEARNED_IMPLEMENTATION:
-            raise SkillManifestError(f"{path}: learned skills must use {LEARNED_IMPLEMENTATION!r}")
+            raise ToolManifestError(f"{path}: learned tools must use {LEARNED_IMPLEMENTATION!r}")
         code = (path.parent / CODE_FILE).read_text(encoding="utf-8")
         problems = check_source(code)
         if problems:
-            raise SkillManifestError(f"{path.parent / CODE_FILE}: {'; '.join(problems)}")
-        skills.append((manifest, sandboxed_skill(code, run)))
-    return skills
+            raise ToolManifestError(f"{path.parent / CODE_FILE}: {'; '.join(problems)}")
+        tools.append((manifest, sandboxed_tool(code, run)))
+    return tools
 
 
-def sandboxed_skill(code: str, run: Runner) -> SkillFunction:
-    """Adapt generated code to the catalog's skill contract.
+def sandboxed_tool(code: str, run: Runner) -> ToolFunction:
+    """Adapt generated code to the catalog's tool contract.
 
-    A crash in generated code is the skill's failure, not a bug of ours, so it becomes a
-    ``SkillError`` like any other.
+    A crash in generated code is the tool's failure, not a bug of ours, so it becomes a
+    ``ToolError`` like any other.
     """
 
     def execute(arguments: Mapping[str, Any]) -> JSONObject:
         result = run(code, dict(arguments))
         if result.output is not None:
             return result.output
-        raise SkillError(result.error or f"learned skill crashed: {result.crash}")
+        raise ToolError(result.error or f"learned tool crashed: {result.crash}")
 
     return execute
 
@@ -187,9 +187,9 @@ def _save_report(store_dir: Path, report: HarnessReport) -> None:
     _write_json(directory / REPORT_FILE, report.to_json())
 
 
-def _save_skill(
+def _save_tool(
     store_dir: Path, report: HarnessReport, run: Runner
-) -> tuple[SkillManifest, SkillFunction]:
+) -> tuple[ToolManifest, ToolFunction]:
     assert report.candidate is not None
     assert report.contract is not None
     manifest, code = report.candidate.manifest, report.candidate.code
@@ -213,9 +213,9 @@ def _save_skill(
             ],
         },
     )
-    # Written last: a directory without skill.json is never loaded.
+    # Written last: a directory without tool.json is never loaded.
     _write_json(
-        directory / SKILL_FILE,
+        directory / TOOL_FILE,
         {
             "name": manifest.name,
             "description": manifest.description,
@@ -228,7 +228,7 @@ def _save_skill(
             "reads_files": manifest.reads_files,
         },
     )
-    return manifest, sandboxed_skill(code, run)
+    return manifest, sandboxed_tool(code, run)
 
 
 def _write_json(path: Path, data: JSONObject) -> None:

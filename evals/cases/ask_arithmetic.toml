@@ -3,10 +3,10 @@ kind = "agent"
 description = """\
 End-to-end vertical slice: the agent discovers the calculator, selects it from its \
 manifest, executes it, and answers from the observed result."""
-tags = ["agent", "skill-selection"]
+tags = ["agent", "tool-selection"]
 task = "What is 123 * 456?"
 
 [expect]
-skills_used = ["calculator"]
+tools_used = ["calculator"]
 answer_contains = ["56088"]
 stop_reason = "answered"

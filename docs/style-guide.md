@@ -8,7 +8,7 @@ How we work in this repo, and why. Each rule comes with its reason; when a rule 
 *Why:* The point of this project is to find out what a small agent architecture can actually do. Code that doesn't run against real inputs teaches us nothing and still has to be maintained.
 
 **Build the spine before the features.**
-*Why:* CLI → loop → skills → LLM → evals → flywheel exist end to end before any of them get clever. Each new capability then lands in a place that already works, with an eval that already runs.
+*Why:* CLI → loop → tools → LLM → evals → flywheel exist end to end before any of them get clever. Each new capability then lands in a place that already works, with an eval that already runs.
 
 **Don't build a framework for yourself.**
 *Why:* "Might be useful someday" abstractions guess wrong about the future and make the present harder to read. Add an abstraction when the second real use appears, not before. No factories or registries for a single implementation.
@@ -32,22 +32,22 @@ How we work in this repo, and why. Each rule comes with its reason; when a rule 
 
 ## Boundaries
 
-**Protocols only at genuine boundaries.** Today those are `LLMClient` and the skill catalog.
+**Protocols only at genuine boundaries.** Today those are `LLMClient` and the tool catalog.
 *Why:* Those are where implementations really vary (Claude vs. fake; calculator vs. web vs. MCP). Elsewhere, concrete classes are simpler and just as testable.
 
 **Vendor SDK types stay inside their adapter.** Only `llm/claude.py` imports `anthropic`.
 *Why:* Swapping or adding a provider must not ripple through the codebase. Provider-specific state round-trips through the opaque `provider_state`.
 
-**Skills know nothing about the loop, and the loop knows nothing about skills.**
-*Why:* Future skills will be backed by APIs, web fetches, browsers or MCP. The loop has to stay stable while they change, and `SkillCatalog.execute` is the only contract between them.
+**Tools know nothing about the loop, and the loop knows nothing about tools.**
+*Why:* Future tools will be backed by APIs, web fetches, browsers or MCP. The loop has to stay stable while they change, and `ToolCatalog.execute` is the only contract between them.
 
 ## Capability discovery over hard-coding
 
-**Never route on task text** (`if "flight" in prompt: ...`). The model selects from skill manifests. When nothing fits, it says so through `request_capability`.
+**Never route on task text** (`if "flight" in prompt: ...`). The model selects from tool manifests. When nothing fits, it says so through `request_capability`.
 *Why:* Exploring capability discovery is the point of the project. Keyword routing would make every new capability a code change in the core, which is exactly the "pile of agent-specific code" we are trying to avoid.
 
 **Use the model for judgment, tools for exactness at scale.** Small, one-off or language tasks are cheaper and just as good done by the model. Exact results over large or error-prone input, recurring work, and anything that must be verifiable belong in a tool. A real parser fails loudly; a model fails quietly.
-*Why:* Learning a skill costs model calls and the user's attention. It pays off only when the tool is actually better.
+*Why:* Learning a tool costs model calls and the user's attention. It pays off only when the tool is actually better.
 
 **Invest in `when_to_use` and `limitations`.**
 *Why:* They are the model's only basis for selection. A vague description shows up later as a selection failure in the evals.
@@ -61,7 +61,7 @@ How we work in this repo, and why. Each rule comes with its reason; when a rule 
 *Why:* A flight agent that invents flights is worse than no agent. The same discipline applies to our own test data.
 
 **Prefer "I can't" to a guess.** The agent reports capability gaps instead of improvising.
-*Why:* An honest gap is actionable: it tells us which skill to build next. A plausible hallucination hides the problem.
+*Why:* An honest gap is actionable: it tells us which tool to build next. A plausible hallucination hides the problem.
 
 ## Code style
 
@@ -70,7 +70,7 @@ How we work in this repo, and why. Each rule comes with its reason; when a rule 
 - **Small functions with explicit names.** *Why:* Readable diffs and readable stack traces.
 - **Composition over inheritance.** *Why:* Behavior is assembled at the CLI edge (`Agent(llm, catalog)`), not inherited.
 - **No global mutable state.** Settings are read once in `cli.py` and passed down. *Why:* Tests can build any configuration without monkeypatching modules.
-- **Explicit error types** (`LLMError`, `SkillError`, `SkillManifestError`, `EvalCaseError`), caught only where they can be handled. *Why:* An expected failure is information, and a swallowed exception is a hidden bug. Unexpected exceptions propagate.
+- **Explicit error types** (`LLMError`, `ToolError`, `ToolManifestError`, `EvalCaseError`), caught only where they can be handled. *Why:* An expected failure is information, and a swallowed exception is a hidden bug. Unexpected exceptions propagate.
 - **No dead code, no commented-out code.** *Why:* Git remembers; the reader shouldn't have to.
 - **Comments explain why, not what.** *Why:* The code already says what it does.
 - **Match the surrounding code.** *Why:* Consistency is what lets a small codebase stay small.
@@ -97,11 +97,11 @@ Avoid, unless the current implementation genuinely requires it: LangChain or oth
 ## Security
 
 - **Web content and tool results are untrusted input.** They go back to the model as tool results, never as instructions.
-- **Side-effecting skills need human approval gates.** Read-only comes first.
-- **Generated code runs only after the user approves the plan**, in its own process. It is never imported into the agent's process or committed. For now it is unrestricted: agentlab is a single-user toy and the point is to learn whatever the user needs. The approval is the safeguard, so its prompt says plainly that the skill gets full access. Limits come back before anyone else uses it.
+- **Side-effecting tools need human approval gates.** Read-only comes first.
+- **Generated code runs only after the user approves the plan**, in its own process. It is never imported into the agent's process or committed. For now it is unrestricted: agentlab is a single-user toy and the point is to learn whatever the user needs. The approval is the safeguard, so its prompt says plainly that the tool gets full access. Limits come back before anyone else uses it.
 - **Secrets never reach prompts, logs or reprs** (`config.Secret`).
 
-*Why:* As soon as the agent reads the web, every page is a potential prompt injection. See [architecture.md § Security principles](architecture.md#security-principles-for-future-web-skills).
+*Why:* As soon as the agent reads the web, every page is a potential prompt injection. See [architecture.md § Security principles](architecture.md#security-principles-for-future-web-tools).
 
 ## Docs hygiene
 

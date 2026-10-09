@@ -1,7 +1,7 @@
 """The human in the loop: nothing is built without the user's approval.
 
-The user sees the plan ("I don't have this skill, but I can try to build it") and answers
-once. A yes covers building, testing and using the skill: no second question. Learned skills
+The user sees the plan ("I don't have this tool, but I can try to build it") and answers
+once. A yes covers building, testing and using the tool: no second question. Learned tools
 run with full access to the machine, and their code is saved locally for anyone who wants to
 read it.
 """
@@ -15,13 +15,13 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from agentlab.learning.plan import SkillPlan
+    from agentlab.learning.plan import ToolPlan
 
 
 class Approver(Protocol):
     """The human in the loop. Nothing is built without their approval."""
 
-    def approve_plan(self, plan: SkillPlan) -> bool: ...
+    def approve_plan(self, plan: ToolPlan) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,7 @@ class FixedApprover:
 
     plan: bool
 
-    def approve_plan(self, plan: SkillPlan) -> bool:
+    def approve_plan(self, plan: ToolPlan) -> bool:
         return self.plan
 
 
@@ -48,11 +48,11 @@ class ConsoleApprover:
         self._show = show
         self._interactive = sys.stdin.isatty() if interactive is None else interactive
 
-    def approve_plan(self, plan: SkillPlan) -> bool:
+    def approve_plan(self, plan: ToolPlan) -> bool:
         self._show(
-            "\nI don't have a skill for this yet, but I can try to build one:\n"
+            "\nI don't have a tool for this yet, but I can try to build one:\n"
             f"{plan.describe()}\n"
-            "New skills are generated Python that runs on this machine with full access (files, "
+            "New tools are generated Python that runs on this machine with full access (files, "
             "network, commands). If it passes its tests it is used right away and saved only "
             "here (.agentlab/learned/)."
         )

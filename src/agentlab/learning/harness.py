@@ -1,4 +1,4 @@
-"""The runtime eval harness: build a skill on the fly and decide whether it is junk.
+"""The runtime eval harness: build a tool on the fly and decide whether it is junk.
 
     spec -> contract + tests (blind to code) -> [code -> checks]{1..MAX_ATTEMPTS} -> verdict
 
@@ -7,13 +7,13 @@ A candidate is *ready* only if it passes every check:
 - ``static``         the code is valid Python with a top-level ``run(arguments)``
 - ``visible_tests``  the tests the code writer saw pass
 - ``holdout_tests``  tests it never saw pass too (catches code fitted to the examples)
-- ``no_crashes``     invalid input raises ``SkillError``; nothing else blows up
+- ``no_crashes``     invalid input raises ``ToolError``; nothing else blows up
 - ``output_schema``  every output matches the declared schema
 - ``non_constant``   different inputs don't all produce the same output
 - ``deterministic``  the same input gives the same output twice
 - ``hardcoded``      test inputs don't appear as literals in the code
 
-Skills that read files are tested against fixture files: each test gets a fresh folder with
+Tools that read files are tested against fixture files: each test gets a fresh folder with
 its files, and "{root}" in its arguments names it.
 
 The tests are fixed for every attempt, so the specification can't drift toward whatever the
@@ -29,18 +29,18 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from agentlab.evals.models import CheckResult
-from agentlab.evals.runner import skill_checks
+from agentlab.evals.runner import tool_checks
 from agentlab.learning.author import AuthorError
-from agentlab.learning.models import CandidateReport, HarnessReport, SkillContract
+from agentlab.learning.models import CandidateReport, HarnessReport, ToolContract
 from agentlab.learning.sandbox import SandboxResult, check_source, run_sandboxed
-from agentlab.skills.models import SkillResult
+from agentlab.tools.models import ToolResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from agentlab.evals.models import EvalCase
-    from agentlab.learning.author import SkillAuthor
-    from agentlab.learning.models import SkillCandidate, SkillSpec
+    from agentlab.learning.author import ToolAuthor
+    from agentlab.learning.models import NewToolSpec, ToolCandidate
     from agentlab.models import JSONObject
 
 
@@ -70,9 +70,9 @@ _TYPE_CHECKS: dict[str, Callable[[object], bool]] = {
 }
 
 
-def build_skill(
-    spec: SkillSpec,
-    author: SkillAuthor,
+def build_tool(
+    spec: NewToolSpec,
+    author: ToolAuthor,
     *,
     manifest_path: Path,
     run: Runner = run_sandboxed,
@@ -106,8 +106,8 @@ def build_skill(
 
 
 def evaluate_candidate(
-    candidate: SkillCandidate,
-    contract: SkillContract,
+    candidate: ToolCandidate,
+    contract: ToolContract,
     holdout_ids: frozenset[str],
     *,
     run: Runner = run_sandboxed,
@@ -140,11 +140,11 @@ def evaluate_candidate(
     return CandidateReport(attempt, tuple(checks))
 
 
-def contract_problems(contract: SkillContract, *, reads_files: bool = False) -> list[str]:
+def contract_problems(contract: ToolContract, *, reads_files: bool = False) -> list[str]:
     """Reasons a generated test suite is too weak or inconsistent to judge code with."""
     problems: list[str] = []
     if reads_files and not any(case.files for case in contract.tests):
-        problems.append("a skill that reads files needs tests with fixture files")
+        problems.append("a tool that reads files needs tests with fixture files")
     problems.extend(
         f"{case.id}: fixture path {rel!r} must be relative, without '..'"
         for case in contract.tests
@@ -199,7 +199,7 @@ def split_tests(tests: Sequence[EvalCase]) -> tuple[tuple[EvalCase, ...], tuple[
 
 def schema_errors(value: object, schema: JSONObject, where: str = "$") -> list[str]:
     """A small JSON Schema subset: type, enum, required, properties, additionalProperties
-    (false), items. Enough for skill I/O, without a dependency."""
+    (false), items. Enough for tool I/O, without a dependency."""
     expected = schema.get("type")
     if expected is not None:
         names = cast("list[str]", expected) if isinstance(expected, list) else [str(expected)]
@@ -221,7 +221,7 @@ def schema_errors(value: object, schema: JSONObject, where: str = "$") -> list[s
     return []
 
 
-def _write_contract(spec: SkillSpec, author: SkillAuthor) -> tuple[SkillContract | None, str]:
+def _write_contract(spec: NewToolSpec, author: ToolAuthor) -> tuple[ToolContract | None, str]:
     problem = ""
     feedback: list[str] = []
     for _ in range(MAX_CONTRACT_ATTEMPTS):
@@ -237,12 +237,12 @@ def _write_contract(spec: SkillSpec, author: SkillAuthor) -> tuple[SkillContract
     return None, problem
 
 
-def _as_skill_result(result: SandboxResult) -> SkillResult:
+def _as_tool_result(result: SandboxResult) -> ToolResult:
     if result.output is not None:
-        return SkillResult(output=result.output)
+        return ToolResult(output=result.output)
     if result.error is not None:
-        return SkillResult(error=result.error)
-    return SkillResult(error=f"crashed: {result.crash}")
+        return ToolResult(error=result.error)
+    return ToolResult(error=f"crashed: {result.crash}")
 
 
 def _failing_tests(
@@ -252,7 +252,7 @@ def _failing_tests(
     for case in tests:
         failed = [
             check
-            for check in skill_checks(case.expect, _as_skill_result(results[case.id]))
+            for check in tool_checks(case.expect, _as_tool_result(results[case.id]))
             if not check.passed
         ]
         if failed:
@@ -290,7 +290,7 @@ def _crash_check(
         for case in tests
         if results[case.id].crash is not None
     ]
-    detail = "crashed instead of returning or raising SkillError: " + "; ".join(crashes)
+    detail = "crashed instead of returning or raising ToolError: " + "; ".join(crashes)
     return CheckResult("no_crashes", not crashes, detail if crashes else "")
 
 
@@ -375,7 +375,7 @@ def _hardcoded_check(code: str, tests: Sequence[EvalCase]) -> CheckResult:
     return CheckResult("hardcoded", not found, detail if found else "")
 
 
-def _pass_summary(contract: SkillContract, holdout_ids: frozenset[str]) -> str:
+def _pass_summary(contract: ToolContract, holdout_ids: frozenset[str]) -> str:
     total = len(contract.tests)
     return (
         f"{total}/{total} tests passed ({len(holdout_ids)} held out) · output schema ok · "
@@ -384,7 +384,7 @@ def _pass_summary(contract: SkillContract, holdout_ids: frozenset[str]) -> str:
 
 
 def _failed(
-    spec: SkillSpec, reports: list[CandidateReport], contract: SkillContract, why: str
+    spec: NewToolSpec, reports: list[CandidateReport], contract: ToolContract, why: str
 ) -> HarnessReport:
     last = reports[-1]
     failing = ", ".join(sorted(check.name for check in last.checks if not check.passed))

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from agentlab.skills.builtin.calculator import run
-from agentlab.skills.models import SkillError
+from agentlab.tools.builtin.calculator import run
+from agentlab.tools.models import ToolError
 
 
 @pytest.mark.parametrize(
@@ -41,11 +41,11 @@ def test_evaluates_arithmetic(expression: str, expected: float) -> None:
     ],
 )
 def test_rejects_invalid_input(expression: str, message: str) -> None:
-    with pytest.raises(SkillError, match=message):
+    with pytest.raises(ToolError, match=message):
         run({"expression": expression})
 
 
 @pytest.mark.parametrize("arguments", [{}, {"expression": ""}, {"expression": 42}])
 def test_requires_expression_string(arguments: dict[str, object]) -> None:
-    with pytest.raises(SkillError, match="non-empty string"):
+    with pytest.raises(ToolError, match="non-empty string"):
         run(arguments)

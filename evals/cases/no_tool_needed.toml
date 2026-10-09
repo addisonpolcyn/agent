@@ -1,9 +1,9 @@
 id = "no_tool_needed"
 kind = "agent"
 description = "The agent should not reach for tools, or report gaps, when the task needs none."
-tags = ["agent", "skill-selection"]
+tags = ["agent", "tool-selection"]
 task = "Say hello."
 
 [expect]
-no_skills_used = true
+no_tools_used = true
 stop_reason = "answered"

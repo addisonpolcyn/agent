@@ -1,15 +1,15 @@
-"""Run generated skill code in a separate process. Not a security boundary.
+"""Run generated tool code in a separate process. Not a security boundary.
 
-agentlab is a single-user toy for now, so learned skills run unrestricted: any import, full
+agentlab is a single-user toy for now, so learned tools run unrestricted: any import, full
 builtins, the user's environment and working directory, the network, files and commands.
 The protections are the user's approval of the plan (see ``learner.py``) and the runtime
 harness. Restrictions come back before anyone else uses this.
 
-What the separate process still buys: a crash, hang or runaway skill can't take the agent
+What the separate process still buys: a crash, hang or runaway tool can't take the agent
 down, and a wall-clock timeout stops it.
 
 ``check_source`` only checks that the code is usable: valid Python, not huge, with a
-top-level ``run(arguments)``. Every skill also gets two convenience functions, ``list_dir``
+top-level ``run(arguments)``. Every tool also gets two convenience functions, ``list_dir``
 and ``read_text`` (see ``_runner.py``).
 """
 
@@ -38,7 +38,7 @@ MAX_READ_BYTES = 1_000_000
 
 @dataclass(frozen=True)
 class SandboxResult:
-    """One execution. ``error`` is a ``SkillError`` the code raised on purpose; ``crash`` is
+    """One execution. ``error`` is a ``ToolError`` the code raised on purpose; ``crash`` is
     anything else (an exception, a timeout, malformed output)."""
 
     output: JSONObject | None = None
@@ -112,7 +112,7 @@ def _parse_reply(completed: subprocess.CompletedProcess[str]) -> SandboxResult:
         reply = json.loads(completed.stdout.strip().splitlines()[-1])
     except json.JSONDecodeError, IndexError:
         detail = completed.stderr.strip().splitlines()[-1:] or [f"exit {completed.returncode}"]
-        return SandboxResult(crash=f"no result from the skill process: {detail[0]}")
+        return SandboxResult(crash=f"no result from the tool process: {detail[0]}")
     return _from_reply(reply)
 
 
@@ -125,4 +125,4 @@ def _from_reply(reply: object) -> SandboxResult:
         case {"crash": str() as crash}:
             return SandboxResult(crash=crash)
         case _:
-            return SandboxResult(crash="malformed reply from the skill process")
+            return SandboxResult(crash="malformed reply from the tool process")

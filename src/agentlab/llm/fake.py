@@ -6,9 +6,9 @@
   which offered tool provides it? if none, can I propose learning one?) using fixed rules, so
   offline runs exercise the real discovery -> selection -> learning -> execution ->
   observation plumbing.
-- ``FixtureAuthorLLM`` stands in for a model writing a skill. It returns a canned contract and
-  implementation for a few fixture skills (``word_count``, ``list_files``, ``sha256_hex``) so
-  offline runs exercise the real skill process and harness. It cannot write any other skill.
+- ``FixtureAuthorLLM`` stands in for a model writing a tool. It returns a canned contract and
+  implementation for a few fixture tools (``word_count``, ``list_files``, ``sha256_hex``) so
+  offline runs exercise the real tool process and harness. It cannot write any other tool.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from agentlab.agent.loop import REQUEST_CAPABILITY
-from agentlab.learning.plan import PROPOSE_SKILL_PLAN
+from agentlab.learning.plan import PROPOSE_TOOL_PLAN
 from agentlab.llm.client import LLMError
 from agentlab.models import (
     AssistantMessage,
@@ -28,7 +28,7 @@ from agentlab.models import (
     ToolResultMessage,
     UserMessage,
 )
-from agentlab.skills.catalog import PROVIDES_PREFIX
+from agentlab.tools.catalog import PROVIDES_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -76,7 +76,7 @@ _LEARNABLE: dict[str, JSONObject] = {
     TEXT_STATISTICS: {
         "summary": "Count the words in a text",
         "capability": TEXT_STATISTICS,
-        "new_skill": {
+        "new_tool": {
             "name": "word_count",
             "purpose": "Count the whitespace-separated words in a text.",
             "inputs": "text: the text to count",
@@ -86,7 +86,7 @@ _LEARNABLE: dict[str, JSONObject] = {
     DIRECTORY_LISTING: {
         "summary": "List the files in a local folder",
         "capability": DIRECTORY_LISTING,
-        "new_skill": {
+        "new_tool": {
             "name": "list_files",
             "purpose": "List the names and types of the entries in a local folder.",
             "inputs": "path: the folder",
@@ -97,7 +97,7 @@ _LEARNABLE: dict[str, JSONObject] = {
     HASHING: {
         "summary": "Hash a text with SHA-256",
         "capability": HASHING,
-        "new_skill": {
+        "new_tool": {
             "name": "sha256_hex",
             "purpose": "Compute the SHA-256 digest of a text (UTF-8), as hex.",
             "inputs": "text: the text to hash",
@@ -154,11 +154,9 @@ def _plan(task: str, tools: Sequence[ToolSpec], call_id: str) -> LLMResponse:
     tool = _tool_providing(capability, tools)
     if tool is not None:
         return LLMResponse(text=None, tool_calls=(ToolCall(call_id, tool.name, arguments),))
-    if capability in _LEARNABLE and any(t.name == PROPOSE_SKILL_PLAN.name for t in tools):
+    if capability in _LEARNABLE and any(t.name == PROPOSE_TOOL_PLAN.name for t in tools):
         plan = {"goal": f"Provide {capability}", "steps": [_LEARNABLE[capability]]}
-        return LLMResponse(
-            text=None, tool_calls=(ToolCall(call_id, PROPOSE_SKILL_PLAN.name, plan),)
-        )
+        return LLMResponse(text=None, tool_calls=(ToolCall(call_id, PROPOSE_TOOL_PLAN.name, plan),))
     gap = {"capability": capability, "reason": f"The task requires {capability}."}
     return LLMResponse(text=None, tool_calls=(ToolCall(call_id, REQUEST_CAPABILITY.name, gap),))
 
@@ -188,16 +186,16 @@ def _answer_from_observation(messages: Sequence[Message], result: ToolResultMess
         if capability == CURRENT_INFORMATION:
             return (
                 "I can't do this yet: it needs current information from the web, and none of my "
-                "available skills provide it. I won't guess at details I can't verify."
+                "available tools provide it. I won't guess at details I can't verify."
             )
-        return f"I can't do this yet: it needs {capability}, and none of my skills provide it."
-    if tool_name == PROPOSE_SKILL_PLAN.name:
+        return f"I can't do this yet: it needs {capability}, and none of my tools provide it."
+    if tool_name == PROPOSE_TOOL_PLAN.name:
         return (
-            f"I can't do this: I don't have a skill for it, and learning one didn't work out "
+            f"I can't do this: I don't have a tool for it, and learning one didn't work out "
             f"({content.get('outcome')}: {content.get('detail')})."
         )
     if result.is_error:
-        return f"The {tool_name} skill reported an error: {content.get('error')}"
+        return f"The {tool_name} tool reported an error: {content.get('error')}"
     if "result" in content:
         return f"The result is {content['result']}."
     return f"{tool_name} returned {json.dumps(content, sort_keys=True)}"
@@ -247,7 +245,7 @@ _WORD_COUNT_FIXTURE: dict[str, JSONObject] = {
              "expect_output": {"count": 7}},
         ],
     },
-    "submit_skill": {
+    "submit_tool": {
         "description": "Counts the whitespace-separated words in a text. [offline fixture]",
         "when_to_use": "The task needs the number of words in a given text.",
         "limitations": "Splits on whitespace only; punctuation stays attached to words.",
@@ -255,7 +253,7 @@ _WORD_COUNT_FIXTURE: dict[str, JSONObject] = {
             "def run(arguments):\n"
             "    text = arguments.get('text')\n"
             "    if not isinstance(text, str):\n"
-            "        raise SkillError('text must be a string')\n"
+            "        raise ToolError('text must be a string')\n"
             "    return {'count': len(text.split())}\n"
         ),
     },
@@ -302,7 +300,7 @@ _LIST_FILES_FIXTURE: dict[str, JSONObject] = {
              "expect_error": "path"},
         ],
     },
-    "submit_skill": {
+    "submit_tool": {
         "description": "Lists the entries of a local folder. [offline fixture]",
         "when_to_use": "The user asks what is in a local folder.",
         "limitations": "One level only; names and types, no contents.",
@@ -310,13 +308,13 @@ _LIST_FILES_FIXTURE: dict[str, JSONObject] = {
             "def run(arguments):\n"
             "    path = arguments.get('path')\n"
             "    if not isinstance(path, str) or not path:\n"
-            "        raise SkillError('path must be a non-empty string')\n"
+            "        raise ToolError('path must be a non-empty string')\n"
             "    entries = list_dir(path)\n"
             "    return {'entries': [{'name': e['name'], 'type': e['type']} for e in entries]}\n"
         ),
     },
 }  # fmt: skip
-# Uses hashlib, outside the old pure-data import allowlist: learned skills may import anything.
+# Uses hashlib, outside the old pure-data import allowlist: learned tools may import anything.
 _SHA256_FIXTURE: dict[str, JSONObject] = {
     "submit_contract": {
         "input_schema": {
@@ -349,7 +347,7 @@ _SHA256_FIXTURE: dict[str, JSONObject] = {
              "expect_error": "string"},
         ],
     },
-    "submit_skill": {
+    "submit_tool": {
         "description": "Computes the SHA-256 digest of a text as hex. [offline fixture]",
         "when_to_use": "The task needs a SHA-256 hash or checksum of a given text.",
         "limitations": "Text only, encoded as UTF-8; no files or other algorithms.",
@@ -358,12 +356,12 @@ _SHA256_FIXTURE: dict[str, JSONObject] = {
             "def run(arguments):\n"
             "    text = arguments.get('text')\n"
             "    if not isinstance(text, str):\n"
-            "        raise SkillError('text must be a string')\n"
+            "        raise ToolError('text must be a string')\n"
             "    return {'hex': hashlib.sha256(text.encode('utf-8')).hexdigest()}\n"
         ),
     },
 }  # fmt: skip
-_SKILL_FIXTURES = {
+_TOOL_FIXTURES = {
     "word_count": _WORD_COUNT_FIXTURE,
     "list_files": _LIST_FILES_FIXTURE,
     "sha256_hex": _SHA256_FIXTURE,
@@ -371,10 +369,10 @@ _SKILL_FIXTURES = {
 
 
 class FixtureAuthorLLM:
-    """Stand-in for a model writing a skill. Fixture data, not intelligence (see module doc).
+    """Stand-in for a model writing a tool. Fixture data, not intelligence (see module doc).
 
     It answers whichever submit tool it is offered with the canned data for the requested
-    skill, and declines (no tool call) for any skill it has no fixture for.
+    tool, and declines (no tool call) for any tool it has no fixture for.
     """
 
     def generate(
@@ -383,8 +381,8 @@ class FixtureAuthorLLM:
         brief = messages[-1]
         if not isinstance(brief, UserMessage) or len(tools) != 1:
             raise LLMError("FixtureAuthorLLM expects one brief and one submit tool")
-        name = str(json.loads(brief.text).get("skill", {}).get("name"))
-        fixture = _SKILL_FIXTURES.get(name, {}).get(tools[0].name)
+        name = str(json.loads(brief.text).get("tool", {}).get("name"))
+        fixture = _TOOL_FIXTURES.get(name, {}).get(tools[0].name)
         if fixture is None:
-            return LLMResponse(text=f"[offline fixture] no canned skill named {name!r}")
+            return LLMResponse(text=f"[offline fixture] no canned tool named {name!r}")
         return LLMResponse(text=None, tool_calls=(ToolCall("fixture", tools[0].name, fixture),))

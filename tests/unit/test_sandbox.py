@@ -1,4 +1,4 @@
-"""Learned skills run unrestricted in their own process (see sandbox.py)."""
+"""Learned tools run unrestricted in their own process (see sandbox.py)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import re
 def run(arguments):
     text = arguments.get("text")
     if not isinstance(text, str):
-        raise SkillError("text must be a string")
+        raise ToolError("text must be a string")
     return {"count": len(re.findall(r"\\S+", text))}
 """
 
@@ -43,7 +43,7 @@ def test_runs_valid_code() -> None:
     assert run_sandboxed(WORD_COUNT, {"text": "a b c"}).output == {"count": 3}
 
 
-def test_skill_error_is_an_error_not_a_crash() -> None:
+def test_tool_error_is_an_error_not_a_crash() -> None:
     result = run_sandboxed(WORD_COUNT, {"text": 3})
     assert result.error == "text must be a string"
     assert result.crash is None
@@ -83,7 +83,7 @@ def test_any_import_and_builtin_is_allowed() -> None:
     assert run_sandboxed(code, {}).output == {"cpus": True, "sum": 3, "name": "dict"}
 
 
-def test_skills_can_write_files_and_run_commands(tmp_path: Path) -> None:
+def test_tools_can_write_files_and_run_commands(tmp_path: Path) -> None:
     code = (
         "import subprocess, sys\n"
         "def run(a):\n"
@@ -97,7 +97,7 @@ def test_skills_can_write_files_and_run_commands(tmp_path: Path) -> None:
     assert target.read_text() == "written"
 
 
-def test_skills_see_the_users_environment_and_directory(
+def test_tools_see_the_users_environment_and_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("AGENTLAB_TEST_VALUE", "visible")
@@ -160,7 +160,7 @@ def test_file_helpers_list_and_read(folder: Path) -> None:
     assert read.output == {"text": "nested"}
 
 
-def test_file_helpers_raise_skill_errors(folder: Path) -> None:
+def test_file_helpers_raise_tool_errors(folder: Path) -> None:
     missing = run_sandboxed(READER, {"path": str(folder / "nope")})
     assert missing.error is not None
     assert "no such file or directory" in missing.error

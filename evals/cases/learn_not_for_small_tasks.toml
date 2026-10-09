@@ -2,12 +2,12 @@ id = "learn_not_for_small_tasks"
 kind = "agent"
 description = """\
 Learning is available and would be approved, but the task is small and one-off: building a \
-skill would cost more than it saves. The agent answers without proposing one."""
+tool would cost more than it saves. The agent answers without proposing one."""
 tags = ["agent", "learning", "cost"]
 task = "How many words are in 'good morning'?"
 approval = "approve"
 
 [expect]
 learning_outcome = "none"
-no_skills_used = true
+no_tools_used = true
 stop_reason = "answered"

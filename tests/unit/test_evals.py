@@ -7,19 +7,19 @@ import pytest
 from agentlab.agent.loop import Agent, AgentRun, CapabilityGap, ToolInvocation
 from agentlab.evals.cases import EvalCaseError, load_case, load_cases
 from agentlab.evals.models import CheckResult, EvalCase, EvalResult, EvalSummary, Expectations
-from agentlab.evals.runner import agent_checks, format_summary, run_case, skill_checks
+from agentlab.evals.runner import agent_checks, format_summary, run_case, tool_checks
 from agentlab.llm.fake import ScriptedLLM
-from agentlab.skills.models import SkillResult
+from agentlab.tools.models import ToolResult
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from agentlab.skills.catalog import SkillCatalog
+    from agentlab.tools.catalog import ToolCatalog
 
 
 def agent_run(
     answer: str = "",
-    skills: tuple[str, ...] = (),
+    tools: tuple[str, ...] = (),
     gaps: tuple[str, ...] = (),
 ) -> AgentRun:
     return AgentRun(
@@ -27,7 +27,7 @@ def agent_run(
         answer=answer,
         stop_reason="answered",
         steps=1,
-        invocations=tuple(ToolInvocation(s, {}, SkillResult(output={})) for s in skills),
+        invocations=tuple(ToolInvocation(s, {}, ToolResult(output={})) for s in tools),
         capability_gaps=tuple(CapabilityGap(g, "") for g in gaps),
     )
 
@@ -39,10 +39,10 @@ def names_failed(checks: list[CheckResult]) -> list[str]:
 def test_agent_checks_pass_on_matching_trace() -> None:
     expect = Expectations(
         answer_contains=("56088",),
-        skills_used=("calculator",),
+        tools_used=("calculator",),
         stop_reason="answered",
     )
-    checks = agent_checks(expect, agent_run("The result is 56088.", skills=("calculator",)))
+    checks = agent_checks(expect, agent_run("The result is 56088.", tools=("calculator",)))
     assert len(checks) == 3
     assert names_failed(checks) == []
 
@@ -70,15 +70,15 @@ def test_agent_checks_report_each_failure_mode() -> None:
     expect = Expectations(
         answer_contains=("56088",),
         answer_excludes_patterns=(r"\$\d",),
-        no_skills_used=True,
+        no_tools_used=True,
         capability_gap="current_information",
         stop_reason="max_steps",
     )
-    checks = agent_checks(expect, agent_run("Flights from $450", skills=("calculator",)))
+    checks = agent_checks(expect, agent_run("Flights from $450", tools=("calculator",)))
     assert names_failed(checks) == [
         "answer_contains",
         "answer_excludes_patterns",
-        "no_skills_used",
+        "no_tools_used",
         "capability_gap",
         "stop_reason",
     ]
@@ -86,9 +86,9 @@ def test_agent_checks_report_each_failure_mode() -> None:
     assert "'$4'" in excluded.detail
 
 
-def test_skill_checks() -> None:
-    ok = skill_checks(Expectations(output_equals={"result": 1}), SkillResult(output={"result": 1}))
-    bad = skill_checks(Expectations(error_contains="zero"), SkillResult(output={"result": 1}))
+def test_tool_checks() -> None:
+    ok = tool_checks(Expectations(output_equals={"result": 1}), ToolResult(output={"result": 1}))
+    bad = tool_checks(Expectations(error_contains="zero"), ToolResult(output={"result": 1}))
     assert names_failed(ok) == []
     assert names_failed(bad) == ["error_contains"]
 
@@ -106,8 +106,8 @@ def test_result_scoring() -> None:
 def test_summary_groups_failures_by_mode() -> None:
     summary = EvalSummary(
         (
-            EvalResult("one", "agent", (), (CheckResult("skills_used", False, "missing"),)),
-            EvalResult("two", "agent", (), (CheckResult("skills_used", False, "missing"),)),
+            EvalResult("one", "agent", (), (CheckResult("tools_used", False, "missing"),)),
+            EvalResult("two", "agent", (), (CheckResult("tools_used", False, "missing"),)),
             EvalResult("three", "agent", (), (CheckResult("stop_reason", True),)),
             EvalResult("four", "agent", (), (), error="LLM error: down"),
         )
@@ -115,13 +115,13 @@ def test_summary_groups_failures_by_mode() -> None:
     assert summary.passed_count == 1
     assert summary.pass_rate == 0.25
     assert summary.failures_by_mode() == {
-        "skills_used": [("one", "missing"), ("two", "missing")],
+        "tools_used": [("one", "missing"), ("two", "missing")],
         "error": [("four", "LLM error: down")],
     }
     assert "1/4 cases passed (25%)" in format_summary(summary)
 
 
-def test_run_case_records_llm_errors(catalog: SkillCatalog) -> None:
+def test_run_case_records_llm_errors(catalog: ToolCatalog) -> None:
     case = EvalCase("c", "agent", "d", Expectations(stop_reason="answered"), task="hi")
     result = run_case(case, lambda _: Agent(ScriptedLLM([]), catalog), catalog)
     assert result.error is not None
@@ -143,9 +143,9 @@ def test_loads_repository_cases(cases_dir: Path) -> None:
         ('id = "x"\nkind = "other"', "'kind' must be"),
         ('id = "x"\nkind = "agent"\ndescription = "d"\ntask = "t"', "at least one check"),
         (
-            'id = "x"\nkind = "skill"\ndescription = "d"\nskill = "s"\n'
-            "[expect]\nno_skills_used = true",
-            "unsupported checks for skill cases: no_skills_used",
+            'id = "x"\nkind = "tool"\ndescription = "d"\ntool = "s"\n'
+            "[expect]\nno_tools_used = true",
+            "unsupported checks for tool cases: no_tools_used",
         ),
         (
             'id = "x"\nkind = "agent"\ndescription = "d"\n[expect]\nstop_reason = "answered"',

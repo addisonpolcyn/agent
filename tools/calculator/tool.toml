@@ -3,7 +3,7 @@ description = "Evaluates an arithmetic expression exactly and returns the numeri
 when_to_use = "The task requires computing a numeric answer from arithmetic: + - * / // % ** and parentheses."
 limitations = "Numbers and operators only. No variables, functions, units, or dates. Exponents are capped at 100."
 capabilities = ["arithmetic"]
-implementation = "agentlab.skills.builtin.calculator:run"
+implementation = "agentlab.tools.builtin.calculator:run"
 
 [input_schema]
 type = "object"

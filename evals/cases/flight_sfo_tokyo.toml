@@ -3,7 +3,7 @@ kind = "agent"
 description = """\
 North-star fixture. Today the agent has no web capability, so the correct behavior is to \
 recognize that static model knowledge is insufficient, report the missing capability, and \
-not fabricate flights. When a web research skill exists, this case will change to expect it \
+not fabricate flights. When a web research tool exists, this case will change to expect it \
 to be selected (see docs/roadmap.md, Stage 4)."""
 tags = ["agent", "north-star", "flight", "capability-gap"]
 task = """\
@@ -12,7 +12,7 @@ and reasonable departure times. Recommend the best options and give me booking l
 
 [expect]
 capability_gap = "current_information"
-no_skills_used = true
+no_tools_used = true
 # Guard against hallucinated details: no prices, flight numbers, or links.
 answer_excludes_patterns = ['\$\s?\d', '\b[A-Z]{2}\s?\d{2,4}\b', 'https?://']
 stop_reason = "answered"

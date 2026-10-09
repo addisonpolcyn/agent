@@ -1,7 +1,7 @@
 id = "files_learned_listing"
 kind = "agent"
 description = """\
-No skill lists folders, so the agent learns a generic file-reading skill at runtime. It is \
+No tool lists folders, so the agent learns a generic file-reading tool at runtime. It is \
 tested against fixture files, the user approved the plan up front, and the agent \
 reports what is actually there."""
 tags = ["agent", "learning", "files"]

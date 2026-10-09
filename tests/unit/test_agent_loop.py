@@ -8,12 +8,12 @@ import pytest
 
 from agentlab.agent.loop import LEARNING_PROMPT, REQUEST_CAPABILITY, SYSTEM_PROMPT, Agent
 from agentlab.learning.approval import FixedApprover
-from agentlab.learning.author import SkillAuthor
-from agentlab.learning.learner import SkillLearner
-from agentlab.learning.plan import PROPOSE_SKILL_PLAN
+from agentlab.learning.author import ToolAuthor
+from agentlab.learning.learner import ToolLearner
+from agentlab.learning.plan import PROPOSE_TOOL_PLAN
 from agentlab.llm.fake import FixtureAuthorLLM, ScriptedLLM
 from agentlab.models import AssistantMessage, LLMResponse, ToolCall, ToolResultMessage, UserMessage
-from agentlab.skills.catalog import SkillCatalog
+from agentlab.tools.catalog import ToolCatalog
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -29,39 +29,39 @@ def answer(text: str) -> LLMResponse:
     return LLMResponse(text=text)
 
 
-def test_direct_answer_takes_one_step(catalog: SkillCatalog) -> None:
+def test_direct_answer_takes_one_step(catalog: ToolCatalog) -> None:
     llm = ScriptedLLM([answer("hello")])
     run = Agent(llm, catalog).run("Say hello")
 
     assert run.answer == "hello"
     assert run.stop_reason == "answered"
     assert run.steps == 1
-    assert run.skills_used == ()
+    assert run.tools_used == ()
     (first,) = llm.calls
     assert first.system == SYSTEM_PROMPT
     assert first.messages == (UserMessage("Say hello"),)
 
 
-def test_offers_catalog_skills_plus_request_capability(catalog: SkillCatalog) -> None:
+def test_offers_catalog_tools_plus_request_capability(catalog: ToolCatalog) -> None:
     llm = ScriptedLLM([answer("ok")])
     Agent(llm, catalog).run("anything")
     assert [t.name for t in llm.calls[0].tools] == ["calculator", REQUEST_CAPABILITY.name]
 
 
-def test_tool_call_then_answer(catalog: SkillCatalog) -> None:
+def test_tool_call_then_answer(catalog: ToolCatalog) -> None:
     llm = ScriptedLLM([call("calculator", {"expression": "120 * 3"}), answer("360")])
     run = Agent(llm, catalog).run("What is 120 * 3?")
 
     assert run.answer == "360"
     assert run.steps == 2
-    assert run.skills_used == ("calculator",)
+    assert run.tools_used == ("calculator",)
     assert run.invocations[0].result.output == {"result": 360}
     second = llm.calls[1].messages
     assert isinstance(second[1], AssistantMessage)
     assert second[2] == ToolResultMessage("c1", {"result": 360}, is_error=False)
 
 
-def test_skill_error_is_fed_back_as_error_observation(catalog: SkillCatalog) -> None:
+def test_tool_error_is_fed_back_as_error_observation(catalog: ToolCatalog) -> None:
     llm = ScriptedLLM([call("calculator", {"expression": "1 / 0"}), answer("can't")])
     run = Agent(llm, catalog).run("1/0?")
 
@@ -71,7 +71,7 @@ def test_skill_error_is_fed_back_as_error_observation(catalog: SkillCatalog) -> 
     )
 
 
-def test_unknown_tool_is_reported_not_raised(catalog: SkillCatalog) -> None:
+def test_unknown_tool_is_reported_not_raised(catalog: ToolCatalog) -> None:
     llm = ScriptedLLM([call("teleport", {}), answer("sorry")])
     run = Agent(llm, catalog).run("beam me up")
 
@@ -81,12 +81,12 @@ def test_unknown_tool_is_reported_not_raised(catalog: SkillCatalog) -> None:
     assert observation.is_error
 
 
-def test_capability_gap_is_recorded(catalog: SkillCatalog) -> None:
+def test_capability_gap_is_recorded(catalog: ToolCatalog) -> None:
     gap = {"capability": "current_information", "reason": "needs live flights"}
     llm = ScriptedLLM([call(REQUEST_CAPABILITY.name, gap), answer("I can't search the web.")])
     run = Agent(llm, catalog).run("Find flights")
 
-    assert run.skills_used == ()
+    assert run.tools_used == ()
     assert [(g.capability, g.reason) for g in run.capability_gaps] == [
         ("current_information", "needs live flights")
     ]
@@ -95,7 +95,7 @@ def test_capability_gap_is_recorded(catalog: SkillCatalog) -> None:
     assert observation.content["available"] is False
 
 
-def test_multiple_tool_calls_in_one_turn(catalog: SkillCatalog) -> None:
+def test_multiple_tool_calls_in_one_turn(catalog: ToolCatalog) -> None:
     turn = LLMResponse(
         text=None,
         tool_calls=(
@@ -113,7 +113,7 @@ def test_multiple_tool_calls_in_one_turn(catalog: SkillCatalog) -> None:
     ]
 
 
-def test_stops_after_max_steps(catalog: SkillCatalog) -> None:
+def test_stops_after_max_steps(catalog: ToolCatalog) -> None:
     llm = ScriptedLLM([call("calculator", {"expression": "1 + 1"}, f"c{i}") for i in range(3)])
     run = Agent(llm, catalog, max_steps=3).run("loop forever")
 
@@ -123,8 +123,8 @@ def test_stops_after_max_steps(catalog: SkillCatalog) -> None:
     assert len(run.invocations) == 3
 
 
-def test_reserved_skill_name_is_rejected(catalog: SkillCatalog) -> None:
-    class Reserved(SkillCatalog):
+def test_reserved_tool_name_is_rejected(catalog: ToolCatalog) -> None:
+    class Reserved(ToolCatalog):
         def __contains__(self, name: object) -> bool:
             return name == REQUEST_CAPABILITY.name
 
@@ -138,7 +138,7 @@ PLAN: JSONObject = {
         {
             "summary": "Count the words in a text",
             "capability": "text_statistics",
-            "new_skill": {
+            "new_tool": {
                 "name": "word_count",
                 "purpose": "Count words.",
                 "inputs": "text",
@@ -149,38 +149,38 @@ PLAN: JSONObject = {
 }
 
 
-def learning_agent(llm: ScriptedLLM, catalog: SkillCatalog, store: Path) -> Agent:
-    learner = SkillLearner(SkillAuthor(FixtureAuthorLLM()), store)
+def learning_agent(llm: ScriptedLLM, catalog: ToolCatalog, store: Path) -> Agent:
+    learner = ToolLearner(ToolAuthor(FixtureAuthorLLM()), store)
     return Agent(llm, catalog, learner=learner)
 
 
-def test_learning_is_offered_only_with_a_learner(catalog: SkillCatalog, tmp_path: Path) -> None:
+def test_learning_is_offered_only_with_a_learner(catalog: ToolCatalog, tmp_path: Path) -> None:
     plain = ScriptedLLM([answer("ok")])
     Agent(plain, catalog).run("x")
     learning = ScriptedLLM([answer("ok")])
     learning_agent(learning, catalog, tmp_path).run("x")
 
-    assert PROPOSE_SKILL_PLAN.name not in [t.name for t in plain.calls[0].tools]
-    assert [t.name for t in learning.calls[0].tools][-1] == PROPOSE_SKILL_PLAN.name
+    assert PROPOSE_TOOL_PLAN.name not in [t.name for t in plain.calls[0].tools]
+    assert [t.name for t in learning.calls[0].tools][-1] == PROPOSE_TOOL_PLAN.name
     assert learning.calls[0].system == SYSTEM_PROMPT + LEARNING_PROMPT
 
 
-def test_learned_skill_is_used_in_a_fresh_append_only_conversation(
-    catalog: SkillCatalog, tmp_path: Path
+def test_learned_tool_is_used_in_a_fresh_append_only_conversation(
+    catalog: ToolCatalog, tmp_path: Path
 ) -> None:
     llm = ScriptedLLM(
         [
-            call(PROPOSE_SKILL_PLAN.name, PLAN),
+            call(PROPOSE_TOOL_PLAN.name, PLAN),
             call("word_count", {"text": "a b c"}, "c2"),
-            answer("3 words, using the newly learned word_count skill."),
+            answer("3 words, using the newly learned word_count tool."),
         ]
     )
     run = learning_agent(llm, catalog, tmp_path).run(
         "count the words in 'a b c'", approver=FixedApprover(plan=True)
     )
 
-    assert run.skills_learned == ("word_count",)
-    assert run.skills_used == ("word_count",)
+    assert run.tools_learned == ("word_count",)
+    assert run.tools_used == ("word_count",)
     assert run.invocations[0].result.output == {"count": 3}
     restart = llm.calls[1]
     assert len(restart.messages) == 1, "earlier turns are never edited, only left behind"
@@ -191,12 +191,12 @@ def test_learned_skill_is_used_in_a_fresh_append_only_conversation(
     assert "word_count" in [t.name for t in restart.tools]
 
 
-def test_new_skill_limit_holds_across_plans_in_one_request(
-    catalog: SkillCatalog, tmp_path: Path
+def test_new_tool_limit_holds_across_plans_in_one_request(
+    catalog: ToolCatalog, tmp_path: Path
 ) -> None:
     def step(name: str, capability: str) -> JSONObject:
-        skill = {"name": name, "purpose": "p", "inputs": "i", "outputs": "o"}
-        return {"summary": name, "capability": capability, "new_skill": skill}
+        tool = {"name": name, "purpose": "p", "inputs": "i", "outputs": "o"}
+        return {"summary": name, "capability": capability, "new_tool": tool}
 
     two_more = {
         "goal": "More",
@@ -204,8 +204,8 @@ def test_new_skill_limit_holds_across_plans_in_one_request(
     }
     llm = ScriptedLLM(
         [
-            call(PROPOSE_SKILL_PLAN.name, PLAN),
-            call(PROPOSE_SKILL_PLAN.name, two_more, "c2"),
+            call(PROPOSE_TOOL_PLAN.name, PLAN),
+            call(PROPOSE_TOOL_PLAN.name, two_more, "c2"),
             answer("I learned word_count; the rest needs a separate request."),
         ]
     )
@@ -214,11 +214,11 @@ def test_new_skill_limit_holds_across_plans_in_one_request(
     )
 
     assert [o.outcome for o in run.learning] == ["ready", "refused_too_large"]
-    assert run.skills_learned == ("word_count",)
+    assert run.tools_learned == ("word_count",)
 
 
-def test_learning_is_declined_without_an_approver(catalog: SkillCatalog, tmp_path: Path) -> None:
-    llm = ScriptedLLM([call(PROPOSE_SKILL_PLAN.name, PLAN), answer("I can't without approval.")])
+def test_learning_is_declined_without_an_approver(catalog: ToolCatalog, tmp_path: Path) -> None:
+    llm = ScriptedLLM([call(PROPOSE_TOOL_PLAN.name, PLAN), answer("I can't without approval.")])
     run = learning_agent(llm, catalog, tmp_path).run("count the words in 'a b'")
 
     assert [o.outcome for o in run.learning] == ["declined_plan"]
@@ -228,16 +228,16 @@ def test_learning_is_declined_without_an_approver(catalog: SkillCatalog, tmp_pat
     assert observation.content["outcome"] == "declined_plan"
 
 
-def test_propose_skill_plan_is_reserved(catalog: SkillCatalog) -> None:
-    class Reserved(SkillCatalog):
+def test_propose_tool_plan_is_reserved(catalog: ToolCatalog) -> None:
+    class Reserved(ToolCatalog):
         def __contains__(self, name: object) -> bool:
-            return name == PROPOSE_SKILL_PLAN.name
+            return name == PROPOSE_TOOL_PLAN.name
 
     with pytest.raises(ValueError, match="reserved"):
         Agent(ScriptedLLM([]), Reserved({}))
 
 
-def test_history_is_sent_before_the_new_task(catalog: SkillCatalog) -> None:
+def test_history_is_sent_before_the_new_task(catalog: ToolCatalog) -> None:
     llm = ScriptedLLM(
         [call("calculator", {"expression": "1234 * 5"}), answer("6170"), answer("7170")]
     )
@@ -250,7 +250,7 @@ def test_history_is_sent_before_the_new_task(catalog: SkillCatalog) -> None:
     assert sent[-1] == UserMessage("Now add 1000 to that result.")
 
 
-def test_history_drops_provider_state(catalog: SkillCatalog) -> None:
+def test_history_drops_provider_state(catalog: ToolCatalog) -> None:
     earlier = (UserMessage("hi"), AssistantMessage("hello", (), provider_state=object()))
     llm = ScriptedLLM([answer("ok")])
     Agent(llm, catalog).run("again", history=earlier)

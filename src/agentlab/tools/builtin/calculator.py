@@ -6,7 +6,7 @@ import ast
 import math
 from typing import TYPE_CHECKING, Any
 
-from agentlab.skills.models import SkillError
+from agentlab.tools.models import ToolError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -37,20 +37,20 @@ _UNARY_OPS: dict[type[ast.unaryop], Callable[[Number], Number]] = {
 def run(arguments: Mapping[str, Any]) -> JSONObject:
     expression = arguments.get("expression")
     if not isinstance(expression, str) or not expression.strip():
-        raise SkillError("'expression' must be a non-empty string")
+        raise ToolError("'expression' must be a non-empty string")
     if len(expression) > MAX_EXPRESSION_LENGTH:
-        raise SkillError(f"expression longer than {MAX_EXPRESSION_LENGTH} characters")
+        raise ToolError(f"expression longer than {MAX_EXPRESSION_LENGTH} characters")
     try:
         tree = ast.parse(expression, mode="eval")
     except SyntaxError as exc:
-        raise SkillError(f"not a valid arithmetic expression: {expression!r}") from exc
+        raise ToolError(f"not a valid arithmetic expression: {expression!r}") from exc
     return {"result": _normalize(_evaluate(tree.body))}
 
 
 def _evaluate(node: ast.expr) -> Number:
     match node:
         case ast.Constant(value=bool()):
-            raise SkillError("booleans are not numbers")
+            raise ToolError("booleans are not numbers")
         case ast.Constant(value=int() | float() as value):
             return value
         case ast.UnaryOp(op=op, operand=operand) if type(op) in _UNARY_OPS:
@@ -58,27 +58,27 @@ def _evaluate(node: ast.expr) -> Number:
         case ast.BinOp(left=left, op=op, right=right) if type(op) in _BINARY_OPS:
             return _apply(op, _evaluate(left), _evaluate(right))
         case _:
-            raise SkillError(f"unsupported syntax: {ast.unparse(node)!r}")
+            raise ToolError(f"unsupported syntax: {ast.unparse(node)!r}")
 
 
 def _apply(op: ast.operator, left: Number, right: Number) -> Number:
     if isinstance(op, ast.Pow) and abs(right) > MAX_EXPONENT:
-        raise SkillError(f"exponent larger than {MAX_EXPONENT}")
+        raise ToolError(f"exponent larger than {MAX_EXPONENT}")
     try:
         result = _BINARY_OPS[type(op)](left, right)
     except ZeroDivisionError as exc:
-        raise SkillError("division by zero") from exc
+        raise ToolError("division by zero") from exc
     except OverflowError as exc:
-        raise SkillError("result is too large") from exc
+        raise ToolError("result is too large") from exc
     if isinstance(result, complex):
-        raise SkillError("result is not a real number")
+        raise ToolError("result is not a real number")
     return result
 
 
 def _normalize(value: Number) -> Number:
     """Present whole floats as ints (``6 / 2`` -> ``3``) so answers read naturally."""
     if isinstance(value, float) and not math.isfinite(value):
-        raise SkillError("result is too large")
+        raise ToolError("result is too large")
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return value

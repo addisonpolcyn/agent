@@ -10,7 +10,7 @@ from agentlab.config import DEFAULT_MODEL, ConfigError, Secret, Settings, read_e
 def test_defaults_without_environment() -> None:
     settings = Settings.from_env({})
     assert settings.model == DEFAULT_MODEL
-    assert settings.skills_dir == Path("skills")
+    assert settings.tools_dir == Path("tools")
     assert settings.anthropic_api_key is None
 
 

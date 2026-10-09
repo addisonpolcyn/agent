@@ -1,8 +1,8 @@
 id = "calculator_component"
-kind = "skill"
-description = "Component check: the calculator skill computes products exactly."
+kind = "tool"
+description = "Component check: the calculator tool computes products exactly."
 tags = ["component", "calculator"]
-skill = "calculator"
+tool = "calculator"
 arguments = { expression = "120 * 3" }
 
 [expect]

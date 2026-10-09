@@ -1,4 +1,4 @@
-"""Data for learning a skill: what to build, its contract, candidates and harness reports."""
+"""Data for learning a tool: what to build, its contract, candidates and harness reports."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from agentlab.evals.models import CheckResult, EvalCase
     from agentlab.models import JSONObject
-    from agentlab.skills.models import SkillManifest
+    from agentlab.tools.models import ToolManifest
 
 type Verdict = Literal["ready", "failed"]
 
 
 @dataclass(frozen=True)
-class SkillSpec:
-    """A generic skill the agent proposed to build, in its own words."""
+class NewToolSpec:
+    """A generic tool the agent proposed to build, in its own words."""
 
     name: str
     capability: str
@@ -36,10 +36,10 @@ class SkillSpec:
 
 
 @dataclass(frozen=True)
-class SkillContract:
+class ToolContract:
     """Schemas and tests, written from the spec alone, before any code exists.
 
-    Tests are skill eval cases (``output_equals`` or ``error_contains``) tagged ``normal``,
+    Tests are tool eval cases (``output_equals`` or ``error_contains``) tagged ``normal``,
     ``edge`` or ``error``.
     """
 
@@ -49,10 +49,10 @@ class SkillContract:
 
 
 @dataclass(frozen=True)
-class SkillCandidate:
+class ToolCandidate:
     """One attempt at an implementation."""
 
-    manifest: SkillManifest
+    manifest: ToolManifest
     code: str
 
 
@@ -82,14 +82,14 @@ class CandidateReport:
 
 @dataclass(frozen=True)
 class HarnessReport:
-    """The outcome of building one skill: ready to offer to the user, or why not."""
+    """The outcome of building one tool: ready to offer to the user, or why not."""
 
-    spec: SkillSpec
+    spec: NewToolSpec
     verdict: Verdict
     reason: str
     reports: tuple[CandidateReport, ...] = ()
-    contract: SkillContract | None = None
-    candidate: SkillCandidate | None = None
+    contract: ToolContract | None = None
+    candidate: ToolCandidate | None = None
 
     @property
     def attempts(self) -> int:
