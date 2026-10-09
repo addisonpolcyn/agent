@@ -63,7 +63,11 @@ The library has two concepts: tools (validated, versioned functions) and workflo
 
 - [x] Adopt the glossary names (skill → tool everywhere) and add the glossary to CLAUDE.md.
 - [ ] Add schemas, purity and `version_hash` to every tool.
+- [x] Instructions for distilling workflows into generic tools, with request-specific values kept as arguments ([workflows.md](workflows.md#distilling-workflows-into-generic-tools)).
 - [ ] Store workflows as declarative DAGs with typed steps.
+- [ ] Trace → workflow: save a successful run as a workflow, lifting its literal values into `params`.
+- [ ] Cross-workflow extraction: decide whether a sequence of steps shared by several workflows becomes a tool, a sub-workflow, or stays duplicated.
+- [ ] Distillation timing: distill after the first success, or wait for a second run in the same request category.
 - [ ] Dedupe check and creation rules at tool-save time.
 - [ ] Run on the email flows and measure before going further.
 

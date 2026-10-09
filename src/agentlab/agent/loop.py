@@ -53,6 +53,9 @@ converting, reading or writing local files, running local commands, fetching a k
 API), call propose_tool_plan with a few small, generic steps. Reuse existing tools for steps \
 they cover. Name new tools for the general operation (list_files, write_text_file, \
 html_to_text), not this task.
+- Keep request-specific values out of tools. Everything particular to this request (who, \
+where, when, which account, URL, file or search term) is an argument you pass when calling \
+the tool, so the next request of the same kind reuses it unchanged.
 - New tools run on the user's machine with full access: any library, files (set \
 reads_files on steps that read them), the network and commands.
 - If the user declines or learning fails, say so. Don't present a result worked out in your \

@@ -96,7 +96,7 @@ propose_tool_plan ─► validate_plan ─► the user: "I don't have this, but 
 | A new tool duplicates an existing name or capability, or nothing new is needed | `refused_reuse`: use what exists |
 | Unknown reused tool, non-snake_case or duplicate names, bad shape | `malformed` |
 
-New tools must be generic: name them for the operation (`html_to_text`, `json_query`), not the task.
+New tools must be generic: name them for the operation (`html_to_text`, `json_query`), not the task, and take every request-specific value (host, account, URL, path, date, search term) as an argument. See [workflows.md § Distilling](workflows.md#distilling-workflows-into-generic-tools).
 
 **Runtime harness** (`learning/harness.py`). A first model call writes the schemas and 6–12 tests from the spec alone (normal, edge and error cases). A second call writes the code; it sees only some of the tests, and the rest are held out. Error tests are never held out, since the code writer can't guess an unseen error message. A candidate is ready only if it passes every check:
 

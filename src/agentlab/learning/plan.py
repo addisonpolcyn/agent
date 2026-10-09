@@ -34,6 +34,8 @@ PROPOSE_TOOL_PLAN = ToolSpec(
         f"{MAX_STEPS} small steps. Each step either reuses an existing tool (reuse = its name) or "
         f"describes a new GENERIC tool (new_tool), at most {MAX_NEW_TOOLS} new tools. Name "
         "new tools for the general operation (html_to_text, word_count), never for this task. "
+        "Every value particular to this request (a place, date, account, host, URL, path or "
+        "search term) is an input of the new tool, never part of its name, purpose or defaults. "
         "New tools are Python run on the user's machine with full access: any library, local "
         "files (set reads_files when the tool reads them), the network and commands. The user "
         "must approve the plan before anything is built."

@@ -1,0 +1,23 @@
+id = "learn_isolates_request_values"
+kind = "agent"
+description = """\
+A learned tool keeps request-specific values out of its code: the domain is an argument. \
+The earlier turn learns the tool for example.com; the follow-up asks the same kind of \
+question for acme.org and must reuse it without learning again. A tool that baked in \
+example.com would answer wrongly or force a rebuild. Needs a real model: the offline stand-in \
+never reads the prompt."""
+tags = ["agent", "learning"]
+earlier_turns = ["""\
+I regularly need to pull the email addresses at one domain out of messy text. Build a \
+reusable tool for that, then list the example.com addresses in: \
+'Contact ana@example.com or bo@test.org; cc carl@example.com, dee@example.net.'"""]
+task = """\
+Now list the acme.org addresses in: \
+'Reach eve@acme.org, finn@example.com, hal@acme.org and ann@acme.com.'"""
+approval = "approve"
+model_only = true
+
+[expect]
+learning_outcome = "none"
+answer_contains = ["eve@acme.org", "hal@acme.org"]
+stop_reason = "answered"

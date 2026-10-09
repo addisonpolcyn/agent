@@ -60,11 +60,24 @@ Splitting is about reuse and maintenance; eviction is about usage. Cold usage me
 
 ### Creation rules (enforced before a tool is saved)
 
-- **Parameterize:** `get_weather(location, date)`, never `get_sf_weather()`. Today the learning prompt asks for generic tools, but no rule checks it ([tools.md § Learned tools](tools.md#learned-tools)).
+- **Parameterize:** `get_weather(location, date)`, never `get_sf_weather()`. See [Distilling workflows into generic tools](#distilling-workflows-into-generic-tools).
 - **One external system per tool.**
 - **Never mix side effects with pure logic in one tool.**
 - **Run the dedupe check first:** search the library for overlapping tools by embedding and code similarity; reuse or extract before writing new code. Today only exact name and capability duplicates are refused (`refused_reuse`).
 - **Validate with a real smoke call plus schema assertions,** not only model-written unit tests.
+
+### Distilling workflows into generic tools
+
+A workflow answers one *kind* of request; a tool does one *operation*. When a workflow (or, today, an ad-hoc run) needs a new tool, distill the step into a generic operation and keep everything particular to the request in the workflow:
+
+1. **Name the operation, not the request.** `filter_emails_by_domain`, not `get_acme_emails`; `get_weather`, not `get_sf_weather`.
+2. **Request-specific values are arguments.** Who, where, when, which account, host, URL, path, mailbox or search term: each one is an input in the tool's schema. The workflow's `params` (or the agent's call arguments, until workflows exist) supply them on every call.
+3. **Never as constants, defaults or descriptions.** A value from the request must not appear in the tool's code, its schema defaults or enums, its name or its description. Generic defaults are fine (port 993, folder `INBOX`, the current directory); "this user's mailbox" is not.
+4. **Credentials stay out of arguments.** Pass the *name* of where a secret lives (an environment variable), never the secret.
+5. **Test with varied values.** Tests use values other than the request's, so a tool that only works for this request fails.
+6. **The reuse test:** could the next request of the same kind call this tool unchanged, with different arguments? If not, it isn't distilled yet.
+
+Where it's enforced today: the `propose_tool_plan` description, the learning prompt, and the contract and code prompts all carry rules 1–3 and 5. The `hardcoded` harness check catches test inputs embedded as literals, but not values from the request itself. The `learn_isolates_request_values` eval learns a tool for one domain and checks it's reused, without relearning, for another.
 
 ### Split a tool when
 

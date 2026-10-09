@@ -45,7 +45,9 @@ should raise).
   Include at least one "edge" case (empty or boundary input) and at least one "error" case \
 (invalid input). Use varied inputs so a hard-coded implementation would fail.
   Only write expected outputs you are certain of. Prefer cases whose answer is unambiguous.
-The tool must be generic and reusable. It may use any library, the network, files or \
+The tool must be generic and reusable. Values particular to the user's request (places, \
+dates, accounts, hosts, URLs, paths, search terms) are inputs, never constants or defaults; \
+vary them across tests. It may use any library, the network, files or \
 commands, but tests must be deterministic: if the real output depends on this machine, the \
 clock or live data, give the tool an input that supplies that data (raw text to parse, or a \
 path to a file the test provides, with the real source as the default) and test through it.
@@ -75,6 +77,8 @@ and `read_text(path)` returns a file's text (first 1 MB). Both raise \
 ToolError for missing paths, list_dir also when the path is not a folder, and read_text \
 when it is not a file; let those propagate.
 - Solve the general problem. Never special-case the example inputs.
+- Never embed request-specific values (hosts, accounts, URLs, paths, dates, search terms) \
+as constants or defaults: take them as arguments.
 - Keep it compact: well under 150 lines. A small tool that handles the common cases well \
 beats a large one.
 
