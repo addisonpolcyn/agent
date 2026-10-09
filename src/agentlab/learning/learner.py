@@ -11,7 +11,9 @@ git-ignored). They are reloaded on later runs and run in a separate process, unr
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agentlab.learning.author import LEARNED_IMPLEMENTATION
@@ -23,7 +25,6 @@ from agentlab.tools.models import ToolError, ToolManifestError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-    from pathlib import Path
     from typing import Any
 
     from agentlab.learning.approval import Approver
@@ -38,6 +39,8 @@ TOOL_FILE = "tool.json"
 CODE_FILE = "tool.py"
 TESTS_FILE = "tests.json"
 REPORT_FILE = "report.json"
+# Learned-tool code that ships with agentlab; see ``install_starter_tools``.
+STARTER_DIR = Path(__file__).parent / "starter"
 
 # What the model is told to do next, per outcome. It explains the result to the user.
 _GUIDANCE = {
@@ -142,6 +145,26 @@ class ToolLearner:
             learned.append(spec.name)
         summary = "; ".join(report.summary() for report in reports)
         return LearningOutcome("ready", summary, tuple(learned), tuple(reports)), catalog
+
+
+def install_starter_tools(store_dir: Path) -> list[str]:
+    """Copy the starter tools into ``store_dir``, skipping any name already there.
+
+    Starter tools are learned tools that ship with agentlab, so they run in the tool process
+    like any other. An existing directory is never overwritten, so local edits survive.
+    Returns the names installed.
+    """
+    installed: list[str] = []
+    for source in sorted(STARTER_DIR.glob(f"*/{TOOL_FILE}")):
+        target = store_dir / source.parent.name
+        if target.exists():
+            continue
+        target.mkdir(parents=True)
+        shutil.copyfile(source.parent / CODE_FILE, target / CODE_FILE)
+        # Written last, as in ``_save_tool``: a directory without tool.json is never loaded.
+        shutil.copyfile(source, target / TOOL_FILE)
+        installed.append(target.name)
+    return installed
 
 
 def load_learned(

@@ -53,6 +53,7 @@ Today the whole catalog is offered on every turn, and `request_capability` recor
 - [x] On-demand learning: when no tool fits, the agent proposes generic tools (rule-checked, at most 5 steps per plan and 2 new tools per request), the user approves the plan, a runtime harness builds and tests them, and the tool is used and kept locally (`.agentlab/learned/`). Evals cover ready, declined, rejected, reuse and not-worth-learning, offline and live.
 - [ ] Let `request_capability` search a wider catalog by capability tag and load the match into the current run.
 - [ ] Promote a learned tool into the repo (review, then a manifest and in-package code with evals). This is manual for now.
+- [x] Starter tools: reviewed learned tools that ship in the repo and are installed into the learned directory at launch (`run_command`). See [tools.md § Learned tools](tools.md#learned-tools).
 - [ ] Before anyone but the author uses agentlab: restore limits on learned tools. Learned tools run unrestricted today (any import, files, network, commands). Bring back per-tool permissions the user approves (read files, fetch the web, write files, …), enforced at the OS level (read-only mounts, network namespaces), not just by an import allowlist.
 
 There is no marketplace and no plugin ecosystem. A local catalog is enough.

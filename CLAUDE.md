@@ -47,7 +47,7 @@ uv run pytest -m live                                # real Claude tests (key fr
 | [src/agentlab/models.py](src/agentlab/models.py) | Provider-neutral boundary types (`ToolSpec`, `ToolCall`, messages). |
 | [src/agentlab/llm/](src/agentlab/llm/) | `LLMClient` protocol, `ClaudeClient` (only SDK importer), `ScriptedLLM` / `OfflineLLM` fakes. |
 | [src/agentlab/tools/catalog.py](src/agentlab/tools/catalog.py) | Tool discovery and execution. |
-| [src/agentlab/learning/](src/agentlab/learning/) | On-demand learning: plan rules, the approval gate, author, runtime eval harness, tool process (`sandbox.py`), local store. |
+| [src/agentlab/learning/](src/agentlab/learning/) | On-demand learning: plan rules, the approval gate, author, runtime eval harness, tool process (`sandbox.py`), local store, starter tools shipped into it (`starter/`, e.g. `run_command`). |
 | [tools/](tools/) | Tool manifests (`*/tool.toml`). |
 | [src/agentlab/evals/](src/agentlab/evals/) | Case loading, checks, runner. |
 | [evals/cases/](evals/cases/) | Eval cases (TOML), including the `flight_sfo_tokyo` north-star fixture. |

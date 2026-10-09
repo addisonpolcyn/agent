@@ -17,7 +17,7 @@ from agentlab.evals.runner import format_summary, run_suite
 from agentlab.flywheel.loop import record_iteration
 from agentlab.learning.approval import ConsoleApprover
 from agentlab.learning.author import LEARNED_IMPLEMENTATION, ToolAuthor
-from agentlab.learning.learner import ToolLearner, load_learned
+from agentlab.learning.learner import ToolLearner, install_starter_tools, load_learned
 from agentlab.llm.claude import ClaudeClient
 from agentlab.llm.client import LLMError
 from agentlab.llm.fake import FixtureAuthorLLM, OfflineLLM
@@ -46,10 +46,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         catalog = discover_catalog(settings.tools_dir)
         match args.command:
             case "tools":
+                install_starter_tools(settings.learned_dir)
                 return _tools(settings, catalog)
             case "ask" | "chat":
                 console = ConsoleApprover()
                 learned_dir = None if args.no_learn else settings.learned_dir
+                if learned_dir is not None:
+                    install_starter_tools(learned_dir)
                 agent = _agent(settings, catalog, args.offline, learned_dir)
                 if args.command == "ask":
                     return _ask(agent, args.task, console)

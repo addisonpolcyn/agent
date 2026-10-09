@@ -1,0 +1,59 @@
+{
+  "name": "run_command",
+  "description": "Runs one local shell command with POSIX sh and returns its exit code, stdout, stderr, and whether it timed out.",
+  "when_to_use": "Use this when you need to run one non-interactive shell command on the user's machine (build, test, git, ls, grep and so on) and see the exit code and output, optionally in a specific working directory or with a time limit.",
+  "limitations": "The command cannot be interactive because stdin is empty. No TTY is attached, so some tools change their output. Output is decoded as UTF-8, with invalid bytes replaced. On timeout, the whole process group is killed and exit_code is null. Any partial output that was collected is still returned. The command uses the user's environment and has no sandbox.",
+  "capabilities": [
+    "command_execution"
+  ],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Shell command to run (POSIX sh)"
+      },
+      "cwd": {
+        "type": "string",
+        "description": "Optional working directory"
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "default": 60,
+        "exclusiveMinimum": 0
+      }
+    },
+    "required": [
+      "command"
+    ]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "exit_code": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "description": "Process exit code; null if timed out"
+      },
+      "stdout": {
+        "type": "string"
+      },
+      "stderr": {
+        "type": "string"
+      },
+      "timed_out": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "exit_code",
+      "stdout",
+      "stderr",
+      "timed_out"
+    ]
+  },
+  "implementation": "sandbox:tool.py",
+  "reads_files": false
+}
