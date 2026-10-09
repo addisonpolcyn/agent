@@ -1,0 +1,17 @@
+id = "learn_runs_commands"
+kind = "agent"
+description = """\
+Learned skills may run local commands, so a reusable command check is learned rather than \
+reported as something the agent can't do. Needs a real model: the offline stand-in never \
+reads the prompt."""
+tags = ["agent", "learning"]
+task = """\
+I often need to check whether a command-line tool is installed on this machine. Build a \
+reusable skill for that, then tell me whether git is installed."""
+approval = "approve"
+model_only = true
+
+[expect]
+learning_outcome = "ready"
+answer_contains = ["git"]
+stop_reason = "answered"
