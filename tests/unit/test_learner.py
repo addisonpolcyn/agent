@@ -100,6 +100,16 @@ def test_refused_plans_never_reach_the_user(catalog: SkillCatalog, tmp_path: Pat
     assert approver.asked == []
 
 
+def test_new_skill_limit_is_per_request(catalog: SkillCatalog, tmp_path: Path) -> None:
+    approver = SpyApprover()
+    outcome, updated = learner(tmp_path).learn(PLAN, catalog, approver, already_learned=2)
+
+    assert outcome.outcome == "refused_too_large"
+    assert "per request" in outcome.reason
+    assert approver.asked == [], "refused before the user is asked"
+    assert updated is catalog
+
+
 def test_malformed_plan_is_reported(catalog: SkillCatalog, tmp_path: Path) -> None:
     outcome, _ = learner(tmp_path).learn({"goal": "g"}, catalog, SpyApprover())
     assert outcome.outcome == "malformed"

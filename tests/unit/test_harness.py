@@ -44,6 +44,8 @@ TESTS: list[JSONObject] = [
     {"name": "empty", "kind": "edge", "arguments": {"text": ""}, "expect_output": {"count": 0}},
     {"name": "not_a_string", "kind": "error", "arguments": {"text": 5},
      "expect_error": "string"},
+    {"name": "one_word", "kind": "normal", "arguments": {"text": "solo"},
+     "expect_output": {"count": 1}},
     {"name": "letters", "kind": "normal", "arguments": {"text": "a b c d e f g"},
      "expect_output": {"count": 7}},
 ]  # fmt: skip
@@ -128,7 +130,7 @@ def test_working_skill_is_ready_on_first_attempt() -> None:
     assert report.attempts == 1
     assert report.candidate is not None
     assert report.candidate.manifest.capabilities == ("text_statistics",)
-    assert "6/6 tests passed (2 held out)" in report.summary()
+    assert "7/7 tests passed (2 held out)" in report.summary()
 
 
 def test_retry_gets_failures_as_feedback_and_can_recover() -> None:
@@ -214,6 +216,14 @@ def test_weak_test_suite_is_rejected_before_any_code_is_written() -> None:
 )
 def test_junk_is_caught_by_the_right_checks(code: str, expected: set[str]) -> None:
     assert failed_checks(code) == expected
+
+
+def test_error_tests_are_never_held_out() -> None:
+    visible, holdout = split_tests(contract().tests)
+
+    assert [c.id for c in holdout] == ["extra_spaces", "letters"]
+    assert "not_a_string" in [c.id for c in visible]
+    assert all("error" not in c.tags for c in holdout)
 
 
 def test_overfit_code_is_called_out() -> None:

@@ -191,6 +191,32 @@ def test_learned_skill_is_used_in_a_fresh_append_only_conversation(
     assert "word_count" in [t.name for t in restart.tools]
 
 
+def test_new_skill_limit_holds_across_plans_in_one_request(
+    catalog: SkillCatalog, tmp_path: Path
+) -> None:
+    def step(name: str, capability: str) -> JSONObject:
+        skill = {"name": name, "purpose": "p", "inputs": "i", "outputs": "o"}
+        return {"summary": name, "capability": capability, "new_skill": skill}
+
+    two_more = {
+        "goal": "More",
+        "steps": [step("sha256_hex", "hashing"), step("list_files", "listing")],
+    }
+    llm = ScriptedLLM(
+        [
+            call(PROPOSE_SKILL_PLAN.name, PLAN),
+            call(PROPOSE_SKILL_PLAN.name, two_more, "c2"),
+            answer("I learned word_count; the rest needs a separate request."),
+        ]
+    )
+    run = learning_agent(llm, catalog, tmp_path).run(
+        "count words, then more", approver=FixedApprover(plan=True)
+    )
+
+    assert [o.outcome for o in run.learning] == ["ready", "refused_too_large"]
+    assert run.skills_learned == ("word_count",)
+
+
 def test_learning_is_declined_without_an_approver(catalog: SkillCatalog, tmp_path: Path) -> None:
     llm = ScriptedLLM([call(PROPOSE_SKILL_PLAN.name, PLAN), answer("I can't without approval.")])
     run = learning_agent(llm, catalog, tmp_path).run("count the words in 'a b'")

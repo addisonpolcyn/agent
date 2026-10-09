@@ -92,13 +92,13 @@ propose_skill_plan ─► validate_plan ─► the user: "I don't have this, but
 
 | Rule | Outcome |
 |---|---|
-| More than 5 steps, or more than 2 new skills | `refused_too_large`: split the request |
+| More than 5 steps, or more than 2 new skills in one request (counted across all its plans) | `refused_too_large`: split the request |
 | A new skill duplicates an existing name or capability, or nothing new is needed | `refused_reuse`: use what exists |
 | Unknown reused skill, non-snake_case or duplicate names, bad shape | `malformed` |
 
 New skills must be generic: name them for the operation (`html_to_text`, `json_query`), not the task.
 
-**Runtime harness** (`learning/harness.py`). A first model call writes the schemas and 6–12 tests from the spec alone (normal, edge and error cases). A second call writes the code; it sees only some of the tests, and the rest are held out. A candidate is ready only if it passes every check:
+**Runtime harness** (`learning/harness.py`). A first model call writes the schemas and 6–12 tests from the spec alone (normal, edge and error cases). A second call writes the code; it sees only some of the tests, and the rest are held out. Error tests are never held out, since the code writer can't guess an unseen error message. A candidate is ready only if it passes every check:
 
 | Check | Catches |
 |---|---|

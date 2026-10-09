@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from agentlab.learning.author import LEARNED_IMPLEMENTATION
 from agentlab.learning.harness import MAX_ATTEMPTS, build_skill
-from agentlab.learning.plan import PlanError, parse_plan, validate_plan
+from agentlab.learning.plan import MAX_NEW_SKILLS, PlanError, parse_plan, validate_plan
 from agentlab.learning.sandbox import check_source, run_sandboxed
 from agentlab.skills.catalog import manifest_from_data
 from agentlab.skills.models import SkillError, SkillManifestError
@@ -92,9 +92,18 @@ class SkillLearner:
         return load_learned(self._store_dir, self._run)
 
     def learn(
-        self, arguments: JSONObject, catalog: SkillCatalog, approver: Approver | None
+        self,
+        arguments: JSONObject,
+        catalog: SkillCatalog,
+        approver: Approver | None,
+        *,
+        already_learned: int = 0,
     ) -> tuple[LearningOutcome, SkillCatalog]:
-        """Handle one plan. Returns the outcome and the catalog including any new skills."""
+        """Handle one plan. Returns the outcome and the catalog including any new skills.
+
+        ``already_learned`` counts skills learned earlier for the same request: the limit on
+        new skills is per request, so several small plans can't add up past it.
+        """
         try:
             plan = parse_plan(arguments)
         except PlanError as exc:
@@ -102,6 +111,13 @@ class SkillLearner:
         verdict = validate_plan(plan, catalog)
         if verdict.outcome != "accepted":
             return LearningOutcome(verdict.outcome, verdict.reason), catalog
+        if already_learned + len(plan.new_skills) > MAX_NEW_SKILLS:
+            reason = (
+                f"{already_learned} skill(s) already learned for this request; "
+                f"{len(plan.new_skills)} more is past the limit of {MAX_NEW_SKILLS} per request. "
+                "Use what you learned, and suggest the rest as separate requests."
+            )
+            return LearningOutcome("refused_too_large", reason), catalog
         if approver is None or not approver.approve_plan(plan):
             return LearningOutcome("declined_plan", "the user did not approve the plan"), catalog
 

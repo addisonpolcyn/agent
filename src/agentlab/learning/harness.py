@@ -184,9 +184,16 @@ def contract_problems(contract: SkillContract, *, reads_files: bool = False) -> 
 
 
 def split_tests(tests: Sequence[EvalCase]) -> tuple[tuple[EvalCase, ...], tuple[EvalCase, ...]]:
-    """Every third test is held out from the code writer. Deterministic, so reruns compare."""
-    visible = tuple(c for i, c in enumerate(tests) if i % HOLDOUT_EVERY != HOLDOUT_EVERY - 1)
-    holdout = tuple(c for i, c in enumerate(tests) if i % HOLDOUT_EVERY == HOLDOUT_EVERY - 1)
+    """Every third normal or edge test is held out from the code writer. Deterministic, so
+    reruns compare.
+
+    Error tests are always visible: they expect a message the code writer can't infer, so
+    holding one out tests guessing, not generalization, and retries can't fix it.
+    """
+    answers = [c for c in tests if "error" not in c.tags]
+    held = {c.id for i, c in enumerate(answers) if i % HOLDOUT_EVERY == HOLDOUT_EVERY - 1}
+    visible = tuple(c for c in tests if c.id not in held)
+    holdout = tuple(c for c in tests if c.id in held)
     return visible, holdout
 
 

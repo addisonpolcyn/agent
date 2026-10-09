@@ -3,12 +3,13 @@ kind = "agent"
 description = """\
 No skill hashes text, so the agent learns one at runtime. The fixture code imports hashlib, \
 which the old pure-data import allowlist refused: learned skills may now use any library. \
-The harness tests it, the user approves, and the agent reports the real digest."""
+The harness tests it, the user approves, and the agent reports the real digest. The text has \
+no well-known hash, so a model can't answer from memory."""
 tags = ["agent", "learning"]
-task = "What is the SHA-256 hash of 'hello'?"
+task = "What is the SHA-256 hash of 'agentlab learns skills on demand'?"
 approval = "approve"
 
 [expect]
 learning_outcome = "ready"
-answer_contains = ["2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"]
+answer_contains = ["4e8db30ed908a8b4fe4e4e2b9a3c180f1670a26eff5a6c58d3ce77180cd4eab3"]
 stop_reason = "answered"

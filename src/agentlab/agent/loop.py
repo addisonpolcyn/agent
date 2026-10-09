@@ -187,7 +187,10 @@ class Agent:
                     messages.append(_gap_observation(call, gap))
                 elif call.name == PROPOSE_SKILL_PLAN.name and self._learner is not None:
                     learned: tuple[LearningOutcome, SkillCatalog] = self._learner.learn(
-                        call.arguments, catalog, approver
+                        call.arguments,
+                        catalog,
+                        approver,
+                        already_learned=sum(len(o.learned) for o in learning),
                     )
                     outcome, catalog = learned
                     learning.append(outcome)
