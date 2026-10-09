@@ -49,7 +49,7 @@ def test_refuses_too_many_new_skills(catalog: SkillCatalog) -> None:
 
 @pytest.mark.parametrize("flags", [{"needs_network": True}, {"has_side_effects": True}])
 def test_network_and_side_effects_are_learnable(catalog: SkillCatalog, flags: Any) -> None:
-    # The user approves the plan and the code; no rule refuses what a skill may touch.
+    # The user approves the plan; no rule refuses what a skill may touch.
     assert verdict(catalog, new("fetch_page", "web_fetch", **flags)) == ("accepted", "")
 
 

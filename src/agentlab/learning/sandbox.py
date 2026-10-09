@@ -2,8 +2,8 @@
 
 agentlab is a single-user toy for now, so learned skills run unrestricted: any import, full
 builtins, the user's environment and working directory, the network, files and commands.
-The protections are the two approval gates (see ``learner.py``) and the human review of the
-code at the second one. Restrictions come back before anyone else uses this.
+The protections are the user's approval of the plan (see ``learner.py``) and the runtime
+harness. Restrictions come back before anyone else uses this.
 
 What the separate process still buys: a crash, hang or runaway skill can't take the agent
 down, and a wall-clock timeout stops it.

@@ -176,7 +176,7 @@ def test_learned_skill_is_used_in_a_fresh_append_only_conversation(
         ]
     )
     run = learning_agent(llm, catalog, tmp_path).run(
-        "count the words in 'a b c'", approver=FixedApprover(plan=True, skill=True)
+        "count the words in 'a b c'", approver=FixedApprover(plan=True)
     )
 
     assert run.skills_learned == ("word_count",)

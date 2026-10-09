@@ -1,11 +1,11 @@
-"""Learn skills on demand: validate the plan, ask, build and evaluate, ask again, store.
+"""Learn skills on demand: validate the plan, ask the user, build and evaluate, store.
 
-    plan -> validate_plan -> gate 1 (approve plan) -> build_skill (harness) -> gate 2
-         (approve tested code) -> saved under the local learned dir -> added to the catalog
+    plan -> validate_plan -> user approves the plan -> build_skill (harness)
+         -> saved under the local learned dir -> added to the catalog
 
 Learned skills live only in the local learned directory (``.agentlab/learned/`` by default,
 git-ignored). They are reloaded on later runs and run in a separate process, unrestricted
-(see ``sandbox.py``): the user's approval of the code is the safeguard.
+(see ``sandbox.py``). The user's one approval, of the plan, covers building and using them.
 """
 
 from __future__ import annotations
@@ -48,7 +48,6 @@ _GUIDANCE = {
     "declined_plan": "The user said no. Tell them plainly what you cannot do without it.",
     "failed": "Tell the user the skill isn't working after a reasonable number of attempts, "
     "and why. Do not guess the answer instead.",
-    "declined_skill": "The user rejected the tested skill. Tell them what you cannot do.",
     "ready": "The new skills are now available as tools.",
 }
 
@@ -121,11 +120,6 @@ class SkillLearner:
             if report.verdict == "failed":
                 return LearningOutcome(
                     "failed", report.summary(), tuple(learned), tuple(reports)
-                ), catalog
-            if not approver.approve_skill(report):
-                reason = f"the user did not approve the tested '{spec.name}' skill"
-                return LearningOutcome(
-                    "declined_skill", reason, tuple(learned), tuple(reports)
                 ), catalog
             saved = _save_skill(self._store_dir, report, self._run)
             catalog = catalog.with_skills([saved])

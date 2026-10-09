@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from agentlab.skills.catalog import SkillCatalog
 
 SETTINGS = Settings.load(Path(__file__).resolve().parents[2] / ".env")
-APPROVE = FixedApprover(plan=True, skill=True)
+APPROVE = FixedApprover(plan=True)
 
 pytestmark = [
     pytest.mark.live,

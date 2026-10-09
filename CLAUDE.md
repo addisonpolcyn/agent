@@ -33,7 +33,7 @@ uv run pytest -m live                                # real Claude tests (key fr
 | [src/agentlab/models.py](src/agentlab/models.py) | Provider-neutral boundary types (`ToolSpec`, `ToolCall`, messages). |
 | [src/agentlab/llm/](src/agentlab/llm/) | `LLMClient` protocol, `ClaudeClient` (only SDK importer), `ScriptedLLM` / `OfflineLLM` fakes. |
 | [src/agentlab/skills/catalog.py](src/agentlab/skills/catalog.py) | Skill discovery and execution. |
-| [src/agentlab/learning/](src/agentlab/learning/) | On-demand learning: plan rules, approval gates, author, runtime eval harness, skill process (`sandbox.py`), local store. |
+| [src/agentlab/learning/](src/agentlab/learning/) | On-demand learning: plan rules, the approval gate, author, runtime eval harness, skill process (`sandbox.py`), local store. |
 | [skills/](skills/) | Skill manifests (`*/skill.toml`). |
 | [src/agentlab/evals/](src/agentlab/evals/) | Case loading, checks, runner. |
 | [evals/cases/](evals/cases/) | Eval cases (TOML), including the `flight_sfo_tokyo` north-star fixture. |
@@ -61,6 +61,6 @@ uv run pytest -m live                                # real Claude tests (key fr
 - Every behavior change ships with an eval case. Never weaken a check to make it pass.
 - Never route on task text. The model selects skills from their manifests.
 - Only `llm/claude.py` imports `anthropic`. The loop never knows how skills work.
-- Generated skill code runs only after both approval gates, in its own process, and is never committed. It is unrestricted (any import, files, network, commands) while agentlab is a single-user toy; restore limits before anyone else uses it ([roadmap](docs/roadmap.md)).
+- Generated skill code runs only after the user approves the plan (one approval, no code review gate), in its own process, and is never committed. It is unrestricted (any import, files, network, commands) while agentlab is a single-user toy; restore limits before anyone else uses it ([roadmap](docs/roadmap.md)).
 - The default test run and the `check` CI job stay offline. Real Claude runs only in `pytest -m live` and the `live-claude` job. Fakes are labeled as fakes, and fabricated data is never presented as real.
 - When documented behavior changes, update the doc and this map in the same change.

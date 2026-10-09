@@ -81,9 +81,9 @@ The agent loop does not change. If you find you need to change it, write down wh
 When no skill fits and the missing piece is a data transformation or reading local files, the agent can offer to build one. The code is in `src/agentlab/learning/`.
 
 ```text
-propose_skill_plan ─► validate_plan ─► gate 1: "I don't have this, but I can build it. OK?"
+propose_skill_plan ─► validate_plan ─► the user: "I don't have this, but I can build it. OK?"
    ─► contract + tests (written blind to the code) ─► code ─► runtime harness (≤ 3 attempts)
-   ─► gate 2: the code and its test results. "Use it?" ─► saved to .agentlab/learned/<name>/
+   ─► passes ─► saved to .agentlab/learned/<name>/ and used (no second question)
 ```
 
 **When to learn at all.** Learning costs model calls and the user's attention. The agent answers small, one-off or judgment tasks itself. It reaches for a tool (existing or learned) when the result must be exact and the input is large or error-prone, when the work will recur, or when the user asks for a reusable capability. Existing skills always come first.
@@ -123,17 +123,17 @@ Relative paths mean the directory agentlab runs in.
 
 The harness tests file skills on fixture files. Each test declares `files` (relative path → text). The harness creates them in a fresh folder and substitutes that folder for `{root}` in the arguments. Nothing stops a candidate from touching other paths during its tests, so a model that ignores its instructions could; that's the cost of running unrestricted.
 
-**Skill process** (`learning/sandbox.py`). Not a security boundary. Generated code runs in a separate `python -P` process with the user's environment and working directory, full builtins and any import, and a 30-second timeout. The process keeps a crash or hang from taking the agent down, and keeps `print` output out of the reply. agentlab is a single-user toy for now, so the safeguard is the user reading the code at gate 2; the prompt says it runs with full access. The previous sandbox (import allowlist, restricted builtins, rlimits, per-folder approval, secret hiding) is in git history, to be restored with real OS-level enforcement before anyone else uses agentlab.
+**Skill process** (`learning/sandbox.py`). Not a security boundary. Generated code runs in a separate `python -P` process with the user's environment and working directory, full builtins and any import, and a 30-second timeout. The process keeps a crash or hang from taking the agent down, and keeps `print` output out of the reply. agentlab is a single-user toy for now, so the safeguard is the user's approval of the plan, whose prompt says the skill runs with full access; the code is saved in `.agentlab/learned/` for anyone who wants to read it. The previous sandbox (import allowlist, restricted builtins, rlimits, per-folder approval, secret hiding) is in git history, to be restored with real OS-level enforcement before anyone else uses agentlab.
 
 **Storage.** `.agentlab/learned/<name>/` holds `skill.json` (the manifest, `implementation = "sandbox:skill.py"`, plus `reads_files` when set), `skill.py`, `tests.json` and `report.json` (the verdict, every attempt's checks and the generated tests). A failed or rejected build leaves only `report.json`, which is never loaded. Learned skills are reloaded on later runs. A tampered file that isn't a usable skill fails loudly at startup. To forget a skill, delete its directory.
 
 **Within a run.** When a skill becomes ready, the loop continues in a fresh conversation that starts with the task, as if the run had started with the skill. The tool list changes at that point, and some providers (Claude's thinking blocks) bind earlier turns to the tools they were produced with, so the earlier conversation is left behind rather than edited.
 
-**Offline.** `OfflineLLM` proposes learning for three fixture capabilities (word counting, listing a folder, and SHA-256 hashing), and `FixtureAuthorLLM` supplies canned `word_count`, `list_files` and `sha256_hex` contracts and code, all labeled as fixtures. `sha256_hex` imports `hashlib`, which the old allowlist refused. Offline runs and CI therefore exercise the real rules, gates, skill process, harness and store.
+**Offline.** `OfflineLLM` proposes learning for three fixture capabilities (word counting, listing a folder, and SHA-256 hashing), and `FixtureAuthorLLM` supplies canned `word_count`, `list_files` and `sha256_hex` contracts and code, all labeled as fixtures. `sha256_hex` imports `hashlib`, which the old allowlist refused. Offline runs and CI therefore exercise the real rules, approval, skill process, harness and store.
 
 ## Current limitations
 
-- **Built-in implementations are in-package Python only.** Manifests are discovered from the filesystem, but code is never loaded from the `skills/` directory. This is deliberate: no arbitrary code execution, no dynamic installs, no marketplace. The one exception is learned skills, which run in their own process after the user approves the code (above).
+- **Built-in implementations are in-package Python only.** Manifests are discovered from the filesystem, but code is never loaded from the `skills/` directory. This is deliberate: no arbitrary code execution, no dynamic installs, no marketplace. The one exception is learned skills, which run in their own process after the user approves the plan (above).
 - **No schema validation of arguments by the catalog.** Each skill validates its own input. Revisit when there are enough skills for duplication to hurt.
 - **One flat catalog, offered in full on every turn.** That's fine for a handful of skills. Larger catalogs will need search-based discovery, which is the job of `request_capability` in Stage 3.
 - **Synchronous execution.** No timeouts or cancellation yet. Web skills will need them.

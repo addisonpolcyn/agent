@@ -1,4 +1,4 @@
-"""The learner: rules, two approval gates, the harness, and the local store."""
+"""The learner: rules, the approval gate, the harness, and the local store."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ from agentlab.skills.models import SkillManifestError
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from agentlab.learning.models import HarnessReport
     from agentlab.learning.plan import SkillPlan
     from agentlab.models import JSONObject
     from agentlab.skills.catalog import SkillCatalog
@@ -44,16 +43,11 @@ PLAN: JSONObject = {
 @dataclass
 class SpyApprover:
     plan: bool = True
-    skill: bool = True
     asked: list[str] = field(default_factory=list[str])
 
     def approve_plan(self, plan: SkillPlan) -> bool:
         self.asked.append("plan")
         return self.plan
-
-    def approve_skill(self, report: HarnessReport) -> bool:
-        self.asked.append(f"skill:{report.verdict}")
-        return self.skill
 
 
 def learner(store: Path) -> SkillLearner:
@@ -66,7 +60,7 @@ def test_approved_skill_is_built_saved_and_usable(catalog: SkillCatalog, tmp_pat
 
     assert outcome.outcome == "ready"
     assert outcome.learned == ("word_count",)
-    assert approver.asked == ["plan", "skill:ready"]
+    assert approver.asked == ["plan"], "one approval covers building and using the skill"
     assert updated.execute("word_count", {"text": "a b c"}).output == {"count": 3}
     assert "word_count" not in catalog, "the input catalog is never mutated"
     files = sorted(p.name for p in (tmp_path / "word_count").iterdir())
@@ -89,12 +83,11 @@ def test_without_an_approver_nothing_is_built(catalog: SkillCatalog, tmp_path: P
     assert not tmp_path.exists() or not any(tmp_path.iterdir())
 
 
-def test_rejected_code_is_never_saved_as_a_skill(catalog: SkillCatalog, tmp_path: Path) -> None:
-    outcome, updated = learner(tmp_path).learn(PLAN, catalog, FixedApprover(True, False))
+def test_declined_plan_builds_nothing(catalog: SkillCatalog, tmp_path: Path) -> None:
+    outcome, updated = learner(tmp_path).learn(PLAN, catalog, FixedApprover(plan=False))
 
-    assert outcome.outcome == "declined_skill"
-    assert "word_count" not in updated
-    assert (tmp_path / "word_count" / "report.json").exists()
+    assert outcome.outcome == "declined_plan"
+    assert updated is catalog
     assert load_learned(tmp_path) == []
 
 
@@ -127,7 +120,7 @@ def test_failed_build_is_reported_honestly(catalog: SkillCatalog, tmp_path: Path
 
     assert outcome.outcome == "failed"
     assert "not ready after 2 attempt(s)" in outcome.reason
-    assert approver.asked == ["plan"], "a failed skill is never offered for approval"
+    assert approver.asked == ["plan"]
     assert "word_count" not in updated
     report = json.loads((tmp_path / "word_count" / "report.json").read_text())
     assert report["verdict"] == "failed"

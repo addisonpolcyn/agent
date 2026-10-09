@@ -3,7 +3,7 @@
 The model proposes; this module disposes. A plan is a few generic steps, each either reusing
 an existing skill or describing a new one. Plans that are too large, that duplicate what the
 catalog already provides never reach the user's approval gate. Anything else may be learned:
-the user approves the plan and then the code.
+the user approves the plan, and that one approval covers building and using the skills.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ PROPOSE_SKILL_PLAN = ToolSpec(
         "new skills for the general operation (html_to_text, word_count), never for this task. "
         "New skills are Python run on the user's machine with full access: any library, local "
         "files (set reads_files when the skill reads them), the network and commands. The user "
-        "must approve the plan, and again the tested code, before use."
+        "must approve the plan before anything is built."
     ),
     input_schema={
         "type": "object",

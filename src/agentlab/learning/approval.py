@@ -1,8 +1,9 @@
-"""The human in the loop: nothing is built, or used, without two approvals.
+"""The human in the loop: nothing is built without the user's approval.
 
-Gate 1 shows the plan ("I don't have this skill, but I can try to build it"). Gate 2 shows
-the generated code and the harness verdict before the skill is ever used. Learned skills run
-with full access to the machine, so gate 2 is the real safeguard: read the code.
+The user sees the plan ("I don't have this skill, but I can try to build it") and answers
+once. A yes covers building, testing and using the skill: no second question. Learned skills
+run with full access to the machine, and their code is saved locally for anyone who wants to
+read it.
 """
 
 from __future__ import annotations
@@ -14,30 +15,23 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from agentlab.learning.models import HarnessReport
     from agentlab.learning.plan import SkillPlan
 
 
 class Approver(Protocol):
-    """The human in the loop. Nothing is built or used without both approvals."""
+    """The human in the loop. Nothing is built without their approval."""
 
     def approve_plan(self, plan: SkillPlan) -> bool: ...
-
-    def approve_skill(self, report: HarnessReport) -> bool: ...
 
 
 @dataclass(frozen=True)
 class FixedApprover:
-    """Answers both gates with fixed values. For tests and evals, never for real users."""
+    """Answers with a fixed value. For tests and evals, never for real users."""
 
     plan: bool
-    skill: bool
 
     def approve_plan(self, plan: SkillPlan) -> bool:
         return self.plan
-
-    def approve_skill(self, report: HarnessReport) -> bool:
-        return self.skill
 
 
 class ConsoleApprover:
@@ -59,18 +53,10 @@ class ConsoleApprover:
             "\nI don't have a skill for this yet, but I can try to build one:\n"
             f"{plan.describe()}\n"
             "New skills are generated Python that runs on this machine with full access (files, "
-            "network, commands) and is saved only here. You'll see the code before it is used."
+            "network, commands). If it passes its tests it is used right away and saved only "
+            "here (.agentlab/learned/)."
         )
         return self._confirm("Build it? [y/N] ")
-
-    def approve_skill(self, report: HarnessReport) -> bool:
-        assert report.candidate is not None, "only ready skills reach the second gate"
-        self._show(
-            f"\n{report.summary()}\n--- code for {report.spec.name} ---\n"
-            f"{report.candidate.code.rstrip()}\n---\n"
-            "It will run with full access to this machine. Approve only code you have read."
-        )
-        return self._confirm(f"Use '{report.spec.name}'? [y/N] ")
 
     def _confirm(self, prompt: str) -> bool:
         if not self._interactive:

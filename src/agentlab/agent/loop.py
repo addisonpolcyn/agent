@@ -52,8 +52,7 @@ when the user asks for a reusable capability.
 counting, converting) or reading local files and folders, call propose_skill_plan with a few \
 small, generic steps. Reuse existing tools for steps they cover. Name new skills for the \
 general operation (list_files, read_text_file, html_to_text), not this task.
-- Reading local files is allowed: set reads_files on that step. The user approves each \
-folder the first time a skill touches it; if they decline, say so.
+- Reading local files is allowed: set reads_files on that step.
 - If the user declines or learning fails, say so. Don't present a result worked out in your \
 head as if a tool had produced it.
 - Never propose skills that need the network, write files or cause side effects. For live \
