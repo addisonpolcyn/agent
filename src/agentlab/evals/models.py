@@ -12,8 +12,8 @@ if TYPE_CHECKING:
     from agentlab.models import JSONObject
 
 type CaseKind = Literal["agent", "skill"]
-type Approval = Literal["approve", "deny_plan", "deny_skill", "deny_files"]
-APPROVALS: tuple[Approval, ...] = ("approve", "deny_plan", "deny_skill", "deny_files")
+type Approval = Literal["approve", "deny_plan"]
+APPROVALS: tuple[Approval, ...] = ("approve", "deny_plan")
 
 
 @dataclass(frozen=True)

@@ -48,16 +48,17 @@ and the user's attention, so use it only when a tool is clearly better than you:
 (long text, many records, big or nested JSON or HTML), when the same work will recur, or \
 when the user asks for a reusable capability.
 - First check whether your existing tools can do the job, alone or combined. Prefer them.
-- If they can't, and the missing piece is a data transformation (parsing, extracting, \
-counting, converting) or reading local files and folders, call propose_skill_plan with a few \
-small, generic steps. Reuse existing tools for steps they cover. Name new skills for the \
-general operation (list_files, read_text_file, html_to_text), not this task.
-- Reading local files is allowed: set reads_files on that step. The user approves each \
-folder the first time a skill touches it; if they decline, say so.
+- If they can't, and a small generic program would do it (parsing, extracting, counting, \
+converting, reading or writing local files, running local commands, fetching a known URL or \
+API), call propose_skill_plan with a few small, generic steps. Reuse existing tools for steps \
+they cover. Name new skills for the general operation (list_files, write_text_file, \
+html_to_text), not this task.
+- New skills run on the user's machine with full access: any library, files (set \
+reads_files on steps that read them), the network and commands.
 - If the user declines or learning fails, say so. Don't present a result worked out in your \
 head as if a tool had produced it.
-- Never propose skills that need the network, write files or cause side effects. For live \
-or recent information, call request_capability instead.
+- Open-ended live research (finding flights, prices, news, weather) needs a web research \
+capability you don't have yet: call request_capability for it rather than learning one.
 - After propose_skill_plan, follow its 'next' instruction and tell the user what happened: \
 the skill is ready and used, the user declined, it failed after several attempts, or the \
 plan was refused (for example, too large)."""
@@ -186,7 +187,10 @@ class Agent:
                     messages.append(_gap_observation(call, gap))
                 elif call.name == PROPOSE_SKILL_PLAN.name and self._learner is not None:
                     learned: tuple[LearningOutcome, SkillCatalog] = self._learner.learn(
-                        call.arguments, catalog, approver
+                        call.arguments,
+                        catalog,
+                        approver,
+                        already_learned=sum(len(o.learned) for o in learning),
                     )
                     outcome, catalog = learned
                     learning.append(outcome)

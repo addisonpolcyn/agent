@@ -30,7 +30,7 @@ stop_reason = "answered"
 | `capability_gap` | agent | The agent reported this missing capability through `request_capability`. |
 | `stop_reason` | agent | The run ended as expected (`answered` or `max_steps`). |
 | `skills_learned` | agent | Each listed skill was learned during the run. |
-| `learning_outcome` | agent | A `propose_skill_plan` call ended this way (`ready`, `failed`, `declined_plan`, `declined_skill`, `refused_too_large`, `refused_reuse`, `refused_not_learnable`, `malformed`). `"none"` means learning was never attempted. |
+| `learning_outcome` | agent | A `propose_skill_plan` call ended this way (`ready`, `failed`, `declined_plan`, `refused_too_large`, `refused_reuse`, `malformed`). `"none"` means learning was never attempted. |
 | `output_equals` | skill | The skill's output equals this table. |
 | `error_contains` | skill | The skill's error message contains this string. |
 
@@ -38,7 +38,7 @@ Unknown checks, or checks used with the wrong kind, are rejected when the case l
 
 Agent cases may set `earlier_turns = ["...", ...]`. These are sent first in the same conversation, so the task can refer back to them; only the final task's run is checked. Cases that need a real model's judgment (such as following a reference to an earlier turn) set `model_only = true`. Offline runs report them as `SKIP`, never as passed, and leave them out of the pass rate. The live job runs them.
 
-Agent cases may set `approval = "approve" | "deny_plan" | "deny_skill" | "deny_files"` (default `deny_plan`). It is the scripted human at the two learning gates and the folder-access prompt: `approve` says yes to everything, and `deny_files` approves learning but refuses folders. Evals never prompt anyone. File cases name paths relative to the repo root, where evals run. Every agent case runs on a fresh agent with its own empty learned-skills directory, so nothing learned in one case leaks into another or into `.agentlab/`.
+Agent cases may set `approval = "approve" | "deny_plan"` (default `deny_plan`). It is the scripted human at the learning approval: `approve` says yes to the plan. Evals never prompt anyone. File cases name paths relative to the repo root, where evals run. Every agent case runs on a fresh agent with its own empty learned-skills directory, so nothing learned in one case leaks into another or into `.agentlab/`.
 
 ## Runtime evaluation of learned skills
 

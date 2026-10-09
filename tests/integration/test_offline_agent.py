@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from agentlab.agent.loop import Agent
 from agentlab.evals.cases import load_cases
 from agentlab.evals.runner import run_suite
-from agentlab.learning.approval import FileGrants
 from agentlab.learning.author import SkillAuthor
 from agentlab.learning.learner import SkillLearner
 from agentlab.llm.fake import FixtureAuthorLLM, OfflineLLM
@@ -43,8 +42,7 @@ def test_offline_suite_passes(catalog: SkillCatalog, cases_dir: Path, tmp_path: 
 
     def agent_for(case: EvalCase) -> Agent:
         store = tmp_path / str(next(stores))
-        grants = FileGrants(lambda _question: case.approval == "approve")
-        learner = SkillLearner(SkillAuthor(FixtureAuthorLLM()), store, grants=grants)
+        learner = SkillLearner(SkillAuthor(FixtureAuthorLLM()), store)
         return Agent(OfflineLLM(), catalog, learner=learner)
 
     summary = run_suite(load_cases(cases_dir), agent_for, catalog, offline=True)

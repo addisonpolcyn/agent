@@ -7,8 +7,8 @@
   offline runs exercise the real discovery -> selection -> learning -> execution ->
   observation plumbing.
 - ``FixtureAuthorLLM`` stands in for a model writing a skill. It returns a canned contract and
-  implementation for the one fixture skill (``word_count``) so offline runs exercise the real
-  sandbox and harness. It cannot write any other skill.
+  implementation for a few fixture skills (``word_count``, ``list_files``, ``sha256_hex``) so
+  offline runs exercise the real skill process and harness. It cannot write any other skill.
 """
 
 from __future__ import annotations
@@ -63,12 +63,14 @@ ARITHMETIC = "arithmetic"
 CURRENT_INFORMATION = "current_information"
 TEXT_STATISTICS = "text_statistics"
 DIRECTORY_LISTING = "directory_listing"
+HASHING = "hashing"
 
 _LIST_FILES = re.compile(
     r"\blist (?:the )?files in (?:the )?([^\s?]+?)[.?]?(?:\s|$)", re.IGNORECASE
 )
 
 _WORD_COUNT = re.compile(r"\bcount (?:the )?words in ['\"](.*)['\"]", re.IGNORECASE)
+_SHA256 = re.compile(r"\bsha-?256 (?:hash )?of ['\"](.*)['\"]", re.IGNORECASE)
 # Capabilities the offline stand-in knows how to propose learning, as one generic step each.
 _LEARNABLE: dict[str, JSONObject] = {
     TEXT_STATISTICS: {
@@ -80,8 +82,6 @@ _LEARNABLE: dict[str, JSONObject] = {
             "inputs": "text: the text to count",
             "outputs": "count: the number of words",
         },
-        "needs_network": False,
-        "has_side_effects": False,
     },
     DIRECTORY_LISTING: {
         "summary": "List the files in a local folder",
@@ -93,8 +93,16 @@ _LEARNABLE: dict[str, JSONObject] = {
             "outputs": "entries: name and type of each entry",
         },
         "reads_files": True,
-        "needs_network": False,
-        "has_side_effects": False,
+    },
+    HASHING: {
+        "summary": "Hash a text with SHA-256",
+        "capability": HASHING,
+        "new_skill": {
+            "name": "sha256_hex",
+            "purpose": "Compute the SHA-256 digest of a text (UTF-8), as hex.",
+            "inputs": "text: the text to hash",
+            "outputs": "hex: the digest as 64 lowercase hex characters",
+        },
     },
 }
 
@@ -125,6 +133,7 @@ def _plan(task: str, tools: Sequence[ToolSpec], call_id: str) -> LLMResponse:
     expression = _find_expression(task)
     words = _WORD_COUNT.search(task)
     listing = _LIST_FILES.search(task)
+    digest = _SHA256.search(task)
     arguments: JSONObject
     if expression is not None:
         capability, arguments = ARITHMETIC, {"expression": expression}
@@ -132,6 +141,8 @@ def _plan(task: str, tools: Sequence[ToolSpec], call_id: str) -> LLMResponse:
         capability, arguments = DIRECTORY_LISTING, {"path": listing.group(1)}
     elif words is not None:
         capability, arguments = TEXT_STATISTICS, {"text": words.group(1)}
+    elif digest is not None:
+        capability, arguments = HASHING, {"text": digest.group(1)}
     elif _FRESHNESS.search(task):
         capability, arguments = CURRENT_INFORMATION, {}
     else:
@@ -305,7 +316,58 @@ _LIST_FILES_FIXTURE: dict[str, JSONObject] = {
         ),
     },
 }  # fmt: skip
-_SKILL_FIXTURES = {"word_count": _WORD_COUNT_FIXTURE, "list_files": _LIST_FILES_FIXTURE}
+# Uses hashlib, outside the old pure-data import allowlist: learned skills may import anything.
+_SHA256_FIXTURE: dict[str, JSONObject] = {
+    "submit_contract": {
+        "input_schema": {
+            "type": "object",
+            "required": ["text"],
+            "properties": {"text": {"type": "string"}},
+        },
+        "output_schema": {
+            "type": "object",
+            "required": ["hex"],
+            "properties": {"hex": {"type": "string"}},
+        },
+        "tests": [
+            {"name": "abc", "kind": "normal", "arguments": {"text": "abc"},
+             "expect_output": {"hex": "ba7816bf8f01cfea414140de5dae2223"
+                                      "b00361a396177a9cb410ff61f20015ad"}},
+            {"name": "sentence", "kind": "normal", "arguments": {"text": "The quick brown fox"},
+             "expect_output": {"hex": "5cac4f980fedc3d3f1f99b4be3472c9b"
+                                      "30d56523e632d151237ec9309048bda9"}},
+            {"name": "unicode", "kind": "normal", "arguments": {"text": "été"},
+             "expect_output": {"hex": "bd010c64132bf5cae8aea89f67625157"
+                                      "27dcf68a5dd1de813c87f50a16c4513c"}},
+            {"name": "empty", "kind": "edge", "arguments": {"text": ""},
+             "expect_output": {"hex": "e3b0c44298fc1c149afbf4c8996fb924"
+                                      "27ae41e4649b934ca495991b7852b855"}},
+            {"name": "spaces", "kind": "edge", "arguments": {"text": "  "},
+             "expect_output": {"hex": "6c179f21e6f62b629055d8ab40f454ed"
+                                      "02e48b68563913473b857d3638e23b28"}},
+            {"name": "not_a_string", "kind": "error", "arguments": {"text": 5},
+             "expect_error": "string"},
+        ],
+    },
+    "submit_skill": {
+        "description": "Computes the SHA-256 digest of a text as hex. [offline fixture]",
+        "when_to_use": "The task needs a SHA-256 hash or checksum of a given text.",
+        "limitations": "Text only, encoded as UTF-8; no files or other algorithms.",
+        "code": (
+            "import hashlib\n\n"
+            "def run(arguments):\n"
+            "    text = arguments.get('text')\n"
+            "    if not isinstance(text, str):\n"
+            "        raise SkillError('text must be a string')\n"
+            "    return {'hex': hashlib.sha256(text.encode('utf-8')).hexdigest()}\n"
+        ),
+    },
+}  # fmt: skip
+_SKILL_FIXTURES = {
+    "word_count": _WORD_COUNT_FIXTURE,
+    "list_files": _LIST_FILES_FIXTURE,
+    "sha256_hex": _SHA256_FIXTURE,
+}
 
 
 class FixtureAuthorLLM:

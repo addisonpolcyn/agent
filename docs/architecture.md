@@ -19,7 +19,7 @@ Capability selection ──────────────┬────�
    ▼                               ▼                              ▼
 Skill catalog                 CapabilityGap recorded         SkillLearner (src/agentlab/learning/)
 (src/agentlab/skills/catalog.py)   ("no skill provides X")   rules → approve plan → build + harness
-   │                               │                         → approve code → store → catalog
+   │                               │                         → store → catalog
    │ execute(name, args)           │
    ▼                               │
 Skill implementation               │
@@ -47,7 +47,7 @@ Evaluation  (src/agentlab/evals/) ──► Flywheel  (src/agentlab/flywheel/) �
 | Skill catalog | `skills/catalog.py` | Discovers `skills/*/skill.toml`, exposes tool specs, executes skills safely. |
 | Evals | `evals/` | Load TOML cases, run them against the agent or a single skill, score the checks. |
 | Flywheel | `flywheel/loop.py` | Record each eval run, diff it against the previous one, and group failures by mode. |
-| Learning | `learning/` | Plan rules, approval gates, skill author, runtime eval harness, sandbox, local store. Optional: the loop works without it. |
+| Learning | `learning/` | Plan rules, the approval gate, skill author, runtime eval harness, sandbox, local store. Optional: the loop works without it. |
 | CLI | `cli.py` | `ask`, `chat`, `eval`, `flywheel`, `skills`. Reads settings once and wires everything together. |
 
 ## Why the boundaries exist
@@ -85,7 +85,7 @@ Web content and tool results are **untrusted input**. This matters as soon as St
 - **External side effects.** Skills that act on the world (submitting forms, booking, sending) need an explicit human approval gate. The bootstrap has none, and flight research starts read-only: search, compare and recommend, with no booking.
 - **Authentication boundaries.** Skills don't share credentials with the model. Secrets stay in config (`Secret`) and are never placed in prompts or logs.
 - **Sensitive user data.** Travel preferences and personal details go only to the skills that need them.
-- **Generated code.** Learned skills are model-written code, so they are untrusted. They transform data and, when the plan says so, read local files through two read-only functions, only in folders the user approves and never secret-looking files. They never get the network, writes or other side effects. They are checked against an allowlist, run in an isolated, resource-limited process, tested by the runtime harness, and shown to the user before first use. Network-capable skills stay built-in and reviewed.
+- **Generated code.** Learned skills are model-written code. While agentlab is a single-user toy they run **unrestricted**: any import, the user's files, environment (including API keys), network and commands. What protects the user is the runtime harness and their approval of the plan, which says the skill runs with full access. The code is not shown before use; it is saved in `.agentlab/learned/`. They run in their own process with a timeout, so a crash or hang can't take the agent down. Before anyone else uses agentlab, restore per-skill permissions with OS-level enforcement ([roadmap](roadmap.md)).
 
 Anthropic's browser-use guidance warns specifically that web pages can carry prompt injections, and recommends isolating sensitive data and actions and keeping approval controls. Treat it as a requirement for any browser skill.
 

@@ -22,8 +22,6 @@ from agentlab.llm.fake import ScriptedLLM
 from agentlab.models import LLMResponse, ToolCall, UserMessage
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from agentlab.learning.models import SkillContract
     from agentlab.models import JSONObject
 
@@ -46,6 +44,8 @@ TESTS: list[JSONObject] = [
     {"name": "empty", "kind": "edge", "arguments": {"text": ""}, "expect_output": {"count": 0}},
     {"name": "not_a_string", "kind": "error", "arguments": {"text": 5},
      "expect_error": "string"},
+    {"name": "one_word", "kind": "normal", "arguments": {"text": "solo"},
+     "expect_output": {"count": 1}},
     {"name": "letters", "kind": "normal", "arguments": {"text": "a b c d e f g"},
      "expect_output": {"count": 7}},
 ]  # fmt: skip
@@ -87,7 +87,7 @@ def run(arguments):
     answers = {"hello world": 2, "one, two; three": 3, "": 0}
     return {"count": answers.get(text, 1)}
 """
-UNSAFE = "import os\ndef run(arguments):\n    return {'count': len(os.listdir('/'))}\n"
+UNUSABLE = "def count(arguments):\n    return {'count': 0}\n"
 
 
 def contract_call(contract: JSONObject = CONTRACT) -> LLMResponse:
@@ -130,7 +130,7 @@ def test_working_skill_is_ready_on_first_attempt() -> None:
     assert report.attempts == 1
     assert report.candidate is not None
     assert report.candidate.manifest.capabilities == ("text_statistics",)
-    assert "6/6 tests passed (2 held out)" in report.summary()
+    assert "7/7 tests passed (2 held out)" in report.summary()
 
 
 def test_retry_gets_failures_as_feedback_and_can_recover() -> None:
@@ -211,11 +211,19 @@ def test_weak_test_suite_is_rejected_before_any_code_is_written() -> None:
         (CRASHES, {"no_crashes", "visible_tests"}),
         (WRONG_SCHEMA, {"output_schema", "visible_tests", "holdout_tests"}),
         (HARDCODED, {"hardcoded", "holdout_tests"}),
-        (UNSAFE, {"static"}),
+        (UNUSABLE, {"static"}),
     ],
 )
 def test_junk_is_caught_by_the_right_checks(code: str, expected: set[str]) -> None:
     assert failed_checks(code) == expected
+
+
+def test_error_tests_are_never_held_out() -> None:
+    visible, holdout = split_tests(contract().tests)
+
+    assert [c.id for c in holdout] == ["extra_spaces", "letters"]
+    assert "not_a_string" in [c.id for c in visible]
+    assert all("error" not in c.tags for c in holdout)
 
 
 def test_overfit_code_is_called_out() -> None:
@@ -234,13 +242,7 @@ def test_nondeterminism_is_caught() -> None:
     candidate = author.write_code(SPEC, the_contract, the_contract.tests, [], MANIFEST_PATH)
     outputs = iter(range(1000))
 
-    def flaky(
-        code: str,
-        arguments: JSONObject,
-        *,
-        reads_files: bool = False,
-        readable_roots: Sequence[Path] = (),
-    ) -> SandboxResult:
+    def flaky(code: str, arguments: JSONObject) -> SandboxResult:
         return SandboxResult(output={"count": next(outputs)})
 
     report = evaluate_candidate(candidate, the_contract, frozenset(), run=flaky)

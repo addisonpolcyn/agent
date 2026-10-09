@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from agentlab.evals.models import EvalCase, Expectations
 from agentlab.learning.models import SkillCandidate, SkillContract
-from agentlab.learning.sandbox import ALLOWED_MODULES
 from agentlab.llm.client import LLMError
 from agentlab.models import ToolSpec, UserMessage
 from agentlab.skills.catalog import manifest_from_data
@@ -35,7 +34,7 @@ class AuthorError(Exception):
 
 
 CONTRACT_PROMPT = """\
-You write the contract for a small, generic, pure-Python skill BEFORE anyone implements it.
+You write the contract for a small, generic Python skill BEFORE anyone implements it.
 
 Return, through submit_contract:
 - input_schema and output_schema: JSON Schema objects (type "object"). Keep them small.
@@ -46,7 +45,10 @@ should raise).
   Include at least one "edge" case (empty or boundary input) and at least one "error" case \
 (invalid input). Use varied inputs so a hard-coded implementation would fail.
   Only write expected outputs you are certain of. Prefer cases whose answer is unambiguous.
-The skill must be generic and reusable. No network, no writing, no side effects.
+The skill must be generic and reusable. It may use any library, the network, files or \
+commands, but tests must be deterministic: if the real output depends on this machine, the \
+clock or live data, give the skill an input that supplies that data (raw text to parse, or a \
+path to a file the test provides, with the real source as the default) and test through it.
 
 If the skill reads files ("reads_files": true), each test also has "files": an object mapping \
 relative paths to text contents (e.g. {"notes/a.txt": "hello"}). The harness creates them in a \
@@ -54,26 +56,24 @@ fresh folder and replaces the literal "{root}" in argument strings with that fol
 arguments look like {"path": "{root}/notes"}. Expected outputs must not contain absolute \
 paths: use names or paths relative to the input. The skill reads through functions whose \
 errors contain these phrases, so expected errors for such cases should use them: \
-"no such file or directory", "not a directory", "not a file", "looks like a secret"."""
+"no such file or directory", "not a directory", "not a file"."""
 
-CODE_PROMPT = f"""\
-You implement a small, generic skill as pure Python that runs in a strict sandbox.
+CODE_PROMPT = """\
+You implement a small, generic skill in Python. It runs in its own process on the user's \
+machine, with the user's environment and working directory.
 
 Rules:
 - Define a top-level `def run(arguments):` that takes a dict matching the input schema and \
 returns a dict matching the output schema exactly.
 - For invalid input, `raise SkillError("message")`. SkillError is predefined; don't import it.
-- Imports allowed: {", ".join(sorted(ALLOWED_MODULES))}. Nothing else.
-- Not allowed: open, eval, exec, getattr, type, dir, str.format (use f-strings), any name or \
-attribute starting with "_" (except defining or calling __init__), async, global.
-- If the skill reads files, two functions are predefined (don't import anything for them): \
+- Any import, builtin or library installed in this Python is available, including os, \
+subprocess and urllib. Prefer the standard library: other packages may not be installed.
+- Two file helpers are predefined (don't import anything for them): \
 `list_dir(path)` returns a sorted list of entries, each with keys name, type ("file", \
 "dir", "symlink" or "other") and size (files only), \
 and `read_text(path)` returns a file's text (first 1 MB). Both raise \
-SkillError for missing paths or secret files, list_dir also when the path is not a folder, \
-and read_text when it is not a file; let those propagate. Only the given path and what is \
-below it are readable: never list a parent folder (for example, to check what a path is). \
-Build child paths with string operations (path + "/" + name). There is no open, os or pathlib.
+SkillError for missing paths, list_dir also when the path is not a folder, and read_text \
+when it is not a file; let those propagate.
 - Solve the general problem. Never special-case the example inputs.
 - Keep it compact: well under 150 lines. A small skill that handles the common cases well \
 beats a large one.

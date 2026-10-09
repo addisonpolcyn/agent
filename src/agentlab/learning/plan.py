@@ -2,8 +2,8 @@
 
 The model proposes; this module disposes. A plan is a few generic steps, each either reusing
 an existing skill or describing a new one. Plans that are too large, that duplicate what the
-catalog already provides, or that need the network or side effects never reach the user's
-approval gate.
+catalog already provides never reach the user's approval gate. Anything else may be learned:
+the user approves the plan, and that one approval covers building and using the skills.
 """
 
 from __future__ import annotations
@@ -24,9 +24,7 @@ MAX_NEW_SKILLS = 2
 MAX_NAME_LENGTH = 40
 _SNAKE_CASE = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")
 
-type PlanOutcome = Literal[
-    "accepted", "malformed", "refused_too_large", "refused_reuse", "refused_not_learnable"
-]
+type PlanOutcome = Literal["accepted", "malformed", "refused_too_large", "refused_reuse"]
 
 PROPOSE_SKILL_PLAN = ToolSpec(
     name="propose_skill_plan",
@@ -36,10 +34,9 @@ PROPOSE_SKILL_PLAN = ToolSpec(
         f"{MAX_STEPS} small steps. Each step either reuses an existing tool (reuse = its name) or "
         f"describes a new GENERIC skill (new_skill), at most {MAX_NEW_SKILLS} new skills. Name "
         "new skills for the general operation (html_to_text, word_count), never for this task. "
-        "New skills are sandboxed Python. They may READ local files (set reads_files; the user "
-        "approves each folder when the skill first touches it) but can never use the network, "
-        "write files or cause side effects: mark steps that need those and expect the plan to "
-        "be refused. The user must approve the plan, and again the tested code, before use."
+        "New skills are Python run on the user's machine with full access: any library, local "
+        "files (set reads_files when the skill reads them), the network and commands. The user "
+        "must approve the plan before anything is built."
     ),
     input_schema={
         "type": "object",
@@ -51,12 +48,7 @@ PROPOSE_SKILL_PLAN = ToolSpec(
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": [
-                        "summary",
-                        "capability",
-                        "needs_network",
-                        "has_side_effects",
-                    ],
+                    "required": ["summary", "capability"],
                     "additionalProperties": False,
                     "properties": {
                         "summary": {"type": "string"},
@@ -80,8 +72,6 @@ PROPOSE_SKILL_PLAN = ToolSpec(
                             "type": "boolean",
                             "description": "the new skill reads local files or folders",
                         },
-                        "needs_network": {"type": "boolean"},
-                        "has_side_effects": {"type": "boolean"},
                     },
                 },
             },
@@ -100,8 +90,6 @@ class PlanStep:
     capability: str
     reuse: str | None
     new_skill: SkillSpec | None
-    needs_network: bool
-    has_side_effects: bool
 
 
 @dataclass(frozen=True)
@@ -120,7 +108,7 @@ class SkillPlan:
             if step.new_skill is not None:
                 how = f"build new skill '{step.new_skill.name}': {step.new_skill.purpose}"
                 if step.new_skill.reads_files:
-                    how += " (reads local files; you approve each folder)"
+                    how += " (reads local files)"
             else:
                 how = f"reuse existing skill '{step.reuse}'"
             lines.append(f"  {number}. {step.summary} [{step.capability}] -> {how}")
@@ -145,7 +133,7 @@ def parse_plan(arguments: JSONObject) -> SkillPlan:
 
 def validate_plan(plan: SkillPlan, catalog: SkillCatalog) -> PlanVerdict:
     """The first rule that objects decides; a plan no rule objects to is accepted."""
-    for rule in (_size_rule, _learnable_rule, _reuse_rule, _naming_rule):
+    for rule in (_size_rule, _reuse_rule, _naming_rule):
         verdict = rule(plan, catalog)
         if verdict is not None:
             return verdict
@@ -166,21 +154,6 @@ def _size_rule(plan: SkillPlan, catalog: SkillCatalog) -> PlanVerdict | None:
             "request. Learn the most general one first.",
         )
     return None
-
-
-def _learnable_rule(plan: SkillPlan, catalog: SkillCatalog) -> PlanVerdict | None:
-    # Reusing an existing (trusted) network skill is fine; only *learned* code is limited.
-    unlearnable = [
-        s.capability
-        for s in plan.steps
-        if s.new_skill is not None and (s.needs_network or s.has_side_effects)
-    ]
-    if not unlearnable:
-        return None
-    return PlanVerdict(
-        "refused_not_learnable",
-        f"learned skills cannot use the network or cause side effects ({', '.join(unlearnable)})",
-    )
 
 
 def _reuse_rule(plan: SkillPlan, catalog: SkillCatalog) -> PlanVerdict | None:
@@ -238,8 +211,6 @@ def _parse_step(raw: object) -> PlanStep:
         new_skill=None
         if new_skill is None
         else _parse_spec(new_skill, capability, reads_files=step.get("reads_files") is True),
-        needs_network=step.get("needs_network") is True,
-        has_side_effects=step.get("has_side_effects") is True,
     )
 
 
